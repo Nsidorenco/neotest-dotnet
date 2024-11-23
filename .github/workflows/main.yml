@@ -28,7 +28,7 @@ jobs:
   #  name: documentation
   #  steps:
   #    - uses: actions/checkout@v3
-#
+  #
   #    - name: setup neovim
   #      uses: rhysd/action-setup-vim@v1
   #      with:
@@ -42,14 +42,14 @@ jobs:
   #     run: exit $(git diff --name-only origin/main -- doc | wc -l)
 
   tests:
-    needs: 
+    needs:
       - lint
       #- documentation
     runs-on: ubuntu-latest
     timeout-minutes: 2
     strategy:
       matrix:
-        neovim_version: ['v0.9.1', 'v0.9.4', 'v0.10.0', 'nightly']
+        neovim_version: ["v0.9.1", "v0.9.4", "v0.10.0", "nightly"]
 
     steps:
       - uses: actions/checkout@v3
@@ -62,14 +62,10 @@ jobs:
           path: _neovim
           key: ${{ runner.os }}-x64-${{ hashFiles('todays-date') }}
 
-      - name: setup neovim
-        uses: rhysd/action-setup-vim@v1
+      - name: Run tests
+        uses: nvim-neorocks/nvim-busted-action@v1
         with:
-          neovim: true
-          version: ${{ matrix.neovim_version }}
-
-      - name: run tests
-        run: make test-ci
+          nvim_version: ${{ matrix.neovim_version }}
 
   release:
     name: release

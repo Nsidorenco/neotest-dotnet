@@ -5,8 +5,8 @@ all:
 
 # runs all the test files.
 test:
-	nvim --version | head -n 1 && echo ''
-	./tests/test.sh
+	eval $(luarocks path --no-bin)
+	luarocks test --local
 
 # installs `mini.nvim`, used for both the tests and documentation.
 deps:
