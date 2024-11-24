@@ -1,21 +1,21 @@
+-- NOTE: This rockspec is used for running busted tests only,
+-- not for publishing to LuaRocks.org
+
 local _MODREV, _SPECREV = "scm", "-1"
 rockspec_format = "3.0"
 package = "neotest-dotnet"
 version = _MODREV .. _SPECREV
 
 dependencies = {
-  "neotest",
-  "tree-sitter-fsharp",
-  "tree-sitter-c_sharp",
+  "lua >= 5.1",
 }
 
 test_dependencies = {
   "lua >= 5.1",
-  "nlua",
 }
 
 source = {
-  url = "git://github.com/issafalcon/neotest-dotnet",
+  url = "git://github.com/issafalcon/" .. package,
 }
 
 build = {
