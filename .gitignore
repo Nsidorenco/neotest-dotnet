@@ -51,3 +51,7 @@ lua_modules
 /lua
 /lua_modules
 /.luarocks
+
+result
+.pre-commit-config.yaml
+.direnv

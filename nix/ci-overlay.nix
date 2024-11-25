@@ -1,30 +1,33 @@
 # Add flake.nix test inputs as arguments here
-{ self, plugin-name, }:
-final: prev:
+{
+  self,
+  plugin-name,
+}: final: prev:
 with final.lib;
-with final.stdenv;
-let
+with final.stdenv; let
   nvim-nightly = final.neovim-nightly;
 
-  mkNeorocksTest = { name, nvim ? final.neovim-unwrapped, extraPkgs ? [ ], }:
-    let
-      nvim-wrapped = final.pkgs.wrapNeovim nvim {
-        configure = {
-          packages.myVimPackage = {
-            start = [
-              # Add plugin dependencies that aren't on LuaRocks here
-            ];
-          };
+  mkNeorocksTest = {
+    name,
+    nvim ? final.neovim-unwrapped,
+    extraPkgs ? [],
+  }: let
+    nvim-wrapped = final.pkgs.wrapNeovim nvim {
+      configure = {
+        packages.myVimPackage = {
+          start = [prev.vimPlugins.nvim-treesitter.withAllGrammars];
         };
       };
-    in final.pkgs.neorocksTest {
+    };
+  in
+    final.pkgs.neorocksTest {
       inherit name;
       pname = plugin-name;
       src = self;
       neovim = nvim-wrapped;
 
-      # luaPackages = ps: with ps; [];
-      # extraPackages = [];
+      luaPackages = ps: with ps; [neotest];
+      # extraPackages = [ ];
 
       preCheck = ''
         export HOME=$(realpath .)
@@ -38,7 +41,7 @@ let
 
   docgen = final.writeShellApplication {
     name = "docgen";
-    runtimeInputs = with final; [ lemmy-help ];
+    runtimeInputs = with final; [lemmy-help];
     text = ''
       mkdir -p doc
       # TODO: Update this!
@@ -46,7 +49,7 @@ let
     '';
   };
 in {
-  nvim-stable-tests = mkNeorocksTest { name = "neovim-stable-tests"; };
+  nvim-stable-tests = mkNeorocksTest {name = "neovim-stable-tests";};
   nvim-nightly-tests = mkNeorocksTest {
     name = "neovim-nightly-tests";
     nvim = nvim-nightly;
