@@ -88,6 +88,7 @@ DotnetNeotestAdapter.discover_positions = function(path)
     local content = lib.files.read(path)
     local lang = vim.treesitter.language.get_lang(filetype) or filetype
     nio.scheduler()
+    tests_in_file = vim.fn.deepcopy(tests_in_file)
     local lang_tree =
       vim.treesitter.get_string_parser(content, lang, { injections = { [lang] = "" } })
 
@@ -164,17 +165,15 @@ DotnetNeotestAdapter.build_spec = function(args)
 
   local results_path = nio.fn.tempname()
   local stream_path = nio.fn.tempname()
-  lib.files.write(results_path, "")
   lib.files.write(stream_path, "")
 
   local stream_data, stop_stream = lib.files.stream_lines(stream_path)
 
   local strategy
   if args.strategy == "dap" then
-    local pid_path = nio.fn.tempname()
     local attached_path = nio.fn.tempname()
 
-    local pid = vstest.debug_tests(pid_path, attached_path, stream_path, results_path, pos.id)
+    local pid = vstest.debug_tests(attached_path, stream_path, results_path, ids)
     --- @type Configuration
     strategy = {
       type = "netcoredbg",
@@ -184,11 +183,12 @@ DotnetNeotestAdapter.build_spec = function(args)
       env = {
         DOTNET_ENVIRONMENT = "Development",
       },
-      processId = pid,
+      processId = vim.trim(pid),
       before = function()
         local dap = require("dap")
         dap.listeners.after.configurationDone["neotest-dotnet"] = function()
           nio.run(function()
+            logger.debug("attached to debug test runner")
             lib.files.write(attached_path, "1")
           end)
         end
@@ -197,7 +197,7 @@ DotnetNeotestAdapter.build_spec = function(args)
   end
 
   return {
-    command = vstest.run_tests(ids, stream_path, results_path),
+    command = vstest.run_tests(args.strategy == "dap", stream_path, results_path, ids),
     context = {
       result_path = results_path,
       stop_stream = stop_stream,
