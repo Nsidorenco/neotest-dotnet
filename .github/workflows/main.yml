@@ -36,6 +36,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
+
+      - name: Install C/C++ Compiler
+        uses: rlalik/setup-cpp-compiler@master
+        with:
+          compiler: clang-latest
+
+      - name: Install tree-sitter CLI
+        uses: baptiste0928/cargo-install@v3
+        with:
+          crate: tree-sitter-cli
+
       - name: Run tests
         uses: nvim-neorocks/nvim-busted-action@v1
         with:
