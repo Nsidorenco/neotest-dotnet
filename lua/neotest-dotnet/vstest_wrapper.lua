@@ -295,7 +295,7 @@ function M.discover_tests(path)
 
   logger.debug("Waiting for result file to populated...")
 
-  local max_wait = 30 * 1000 -- 30 sec
+  local max_wait = 60 * 1000 -- 60 sec
 
   local done = M.spin_lock_wait_file(wait_file, max_wait)
   if done then
