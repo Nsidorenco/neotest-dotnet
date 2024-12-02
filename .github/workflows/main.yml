@@ -57,7 +57,7 @@ jobs:
           nvim_version: ${{ matrix.neovim_version }}
 
       - name: output log
-        if: steps.test.outcome == 'failure'
+        if: always() && steps.test.outcome == 'failure'
         run: cat ~/.local/state/nvim/neotest.log >> $GITHUB_OUTPUT
 
   release:
