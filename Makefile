@@ -5,9 +5,7 @@ all:
 
 # runs all the test files.
 test:
-	export PATH=$PATH:$HOME/.luarocks/bin:
-	eval $(luarocks path --no-bin)
-	busted
+	luarocks test --local
 
 # installs deps before running tests, useful for the CI.
 test-ci: deps test

@@ -11,6 +11,7 @@ dependencies = {
 
 test_dependencies = {
   "lua >= 5.1",
+  "busted",
   "nlua",
 }
 
@@ -20,4 +21,7 @@ source = {
 
 build = {
   type = "builtin",
+  copy_directories = {
+    "scripts",
+  },
 }

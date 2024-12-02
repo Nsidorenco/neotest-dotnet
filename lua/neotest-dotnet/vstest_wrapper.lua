@@ -34,6 +34,8 @@ end
 
 local function get_script(script_name)
   local script_paths = vim.api.nvim_get_runtime_file(script_name, true)
+  logger.debug("possible scripts:")
+  logger.debug(script_paths)
   for _, path in ipairs(script_paths) do
     if vim.endswith(path, ("neotest-dotnet%s" .. script_name):format(lib.files.sep)) then
       return path
@@ -83,8 +85,11 @@ local function invoke_test_runner(command)
       return
     end
 
-    local test_discovery_script = get_script("run_tests.fsx")
+    local test_discovery_script = get_script("scripts/run_tests.fsx")
     local testhost_dll = get_vstest_path()
+
+    logger.debug("found discovery script: " .. test_discovery_script)
+    logger.debug("found testhost dll: " .. testhost_dll)
 
     local vstest_command = { "dotnet", "fsi", test_discovery_script, testhost_dll }
 
@@ -94,8 +99,12 @@ local function invoke_test_runner(command)
     local process = vim.system(vstest_command, {
       stdin = true,
       stdout = function(err, data)
-        logger.trace(data)
-        logger.trace(err)
+        if data then
+          logger.trace(data)
+        end
+        if err then
+          logger.trace(err)
+        end
       end,
     }, function(obj)
       logger.warn("vstest process died :(")

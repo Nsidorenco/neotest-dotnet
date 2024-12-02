@@ -62,10 +62,11 @@ module TestDiscovery =
             ValueOption.None
 
     let logHandler (level: TestMessageLevel) (message: string) =
-        if level = TestMessageLevel.Error then
-            Console.Error.WriteLine(message)
-        else
-            Console.WriteLine(message)
+        if not <| String.IsNullOrWhiteSpace message then
+            if level = TestMessageLevel.Error then
+                Console.Error.WriteLine(message)
+            else
+                Console.WriteLine(message)
 
     type TestCaseDto =
         { CodeFilePath: string
@@ -234,6 +235,7 @@ module TestDiscovery =
                             PlaygroundTestDiscoveryHandler() :> ITestDiscoveryEventsHandler2
 
                         for source in args.Sources do
+                            Console.WriteLine($"Discovering tests for: {source}")
                             r.DiscoverTests([| source |], sourceSettings, options, testSession, discoveryHandler)
 
                         use testsWriter = new StreamWriter(args.OutputPath, append = false)
