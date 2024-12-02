@@ -55,6 +55,9 @@ jobs:
         with:
           nvim_version: ${{ matrix.neovim_version }}
 
+      - name: output log
+        run: cat ~/.local/state/nvim/neotest.log >> $GITHUB_OUTPUT
+
   release:
     name: release
     if: ${{ github.ref == 'refs/heads/main' }}
