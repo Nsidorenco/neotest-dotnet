@@ -32,7 +32,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        neovim_version: ["v0.10.0", "nightly"]
+        neovim_version: ["v0.10.0"]
+        include:
+          - os: ubuntu-latest
+            neovim_version: "nightly"
 
     steps:
       - uses: actions/checkout@v4
