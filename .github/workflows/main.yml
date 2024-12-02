@@ -58,7 +58,7 @@ jobs:
 
       - name: output log
         if: always() && steps.test.outcome == 'failure'
-        run: cat ~/.local/state/nvim/neotest.log >> $GITHUB_OUTPUT
+        run: echo "$(cat ~/.local/state/nvim/neotest.log)" >> $GITHUB_OUTPUT
 
   release:
     name: release
