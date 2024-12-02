@@ -1,5 +1,7 @@
 describe("Test test detection", function()
+  -- increase nio.test timeout
   vim.env.PLENARY_TEST_TIMEOUT = 20000
+  -- add test_discovery script and treesitter parsers installed with luarocks
   vim.opt.runtimepath:append(vim.fn.getcwd())
   vim.opt.runtimepath:append(vim.fn.expand("~/.luarocks/lib/lua/5.1/"))
 
