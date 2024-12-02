@@ -61,7 +61,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: neotest-log
-          path: ${{ runner.home }}/.local/state/nvim/neotest.log
+          path: ~/.local/state/nvim/neotest.log
 
   release:
     name: release
