@@ -43,16 +43,10 @@ local function get_script(script_name)
   end
 end
 
-local proj_file_path_map = {}
-
 ---collects project information based on file
 ---@param path string
 ---@return { proj_file: string, dll_file: string, proj_dir: string }
 function M.get_proj_info(path)
-  if proj_file_path_map[path] then
-    return proj_file_path_map[path]
-  end
-
   local proj_file = vim.fs.find(function(name, _)
     return name:match("%.[cf]sproj$")
   end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
@@ -72,7 +66,6 @@ function M.get_proj_info(path)
     proj_dir = dir_name,
   }
 
-  proj_file_path_map[path] = proj_data
   return proj_data
 end
 
