@@ -174,7 +174,7 @@ function M.discover_tests(path)
   local json
   local proj_info = M.get_proj_info(path)
 
-  if not (proj_info.proj_file and proj_info.dll_file) then
+  if not proj_info.proj_file then
     logger.warn(string.format("failed to find project file for %s", path))
     return {}
   end
@@ -196,6 +196,13 @@ function M.discover_tests(path)
     )
     logger.debug(string.format("dotnet build status code: %s", exitCode))
     logger.debug(stdout)
+  end
+
+  proj_info = M.get_proj_info(path)
+
+  if not proj_info.dll_file then
+    logger.warn(string.format("failed to find project dll for %s", path))
+    return {}
   end
 
   local dll_open_err, dll_stats = nio.uv.fs_stat(proj_info.dll_file)
