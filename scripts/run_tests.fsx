@@ -171,7 +171,7 @@ module TestDiscovery =
 
             member _.AttachDebuggerToProcess(pid: int, ct: CancellationToken) =
                 use cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
-                cts.CancelAfter(TimeSpan.FromSeconds(450))
+                cts.CancelAfter(TimeSpan.FromSeconds(450.))
 
                 do
                     Console.WriteLine($"spawned test process with pid: {pid}")
