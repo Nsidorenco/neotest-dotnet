@@ -56,9 +56,12 @@ jobs:
         with:
           nvim_version: ${{ matrix.neovim_version }}
 
-      - name: output log
+      - name: Save neotest log
         if: always() && steps.test.outcome == 'failure'
-        run: echo "$(cat ~/.local/state/nvim/neotest.log)" >> $GITHUB_OUTPUT
+        uses: actions/upload-artifact@v4
+        with:
+          name: neotest-log
+          path: ~/.local/state/nvim/neotest.log)
 
   release:
     name: release
