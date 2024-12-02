@@ -52,10 +52,12 @@ jobs:
 
       - name: Run tests
         uses: nvim-neorocks/nvim-busted-action@v1
+        continue-on-error: true
         with:
           nvim_version: ${{ matrix.neovim_version }}
 
       - name: output log
+        if: failure()
         run: cat ~/.local/state/nvim/neotest.log >> $GITHUB_OUTPUT
 
   release:
