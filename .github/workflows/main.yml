@@ -30,7 +30,7 @@ jobs:
       - lint
       #- documentation
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 4
     strategy:
       matrix:
         neovim_version: ["v0.10.0", "v0.10.1", "v0.10.2", "v0.10.3", "nightly"]

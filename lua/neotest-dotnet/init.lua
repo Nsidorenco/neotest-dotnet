@@ -1,5 +1,7 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
+local utils = require("neotest.utils")
+local types = require("neotest.types")
 local logger = require("neotest.logging")
 
 local vstest = require("neotest-dotnet.vstest_wrapper")
@@ -31,6 +33,50 @@ local function get_match_type(captured_nodes)
   end
 end
 
+local function build_structure(positions, namespaces, opts)
+  ---@type neotest.Position
+  local parent = table.remove(positions, 1)
+  if not parent then
+    return nil
+  end
+  parent.id = parent.type == "file" and parent.path or opts.position_id(parent, namespaces)
+  local current_level = { parent }
+  local child_namespaces = vim.list_extend({}, namespaces)
+  if
+    parent.type == "namespace"
+    or parent.type == "parameterized"
+    or (opts.nested_tests and parent.type == "test")
+  then
+    child_namespaces[#child_namespaces + 1] = parent
+  end
+  if not parent.range then
+    return current_level
+  end
+  while true do
+    local next_pos = positions[1]
+    if not next_pos or (next_pos.range and not lib.positions.contains(parent, next_pos)) then
+      -- Don't preserve empty namespaces
+      if #current_level == 1 and parent.type == "namespace" then
+        return nil
+      end
+      if opts.require_namespaces and parent.type == "test" and #namespaces == 0 then
+        return nil
+      end
+      return current_level
+    end
+
+    if parent.type == "parameterized" then
+      local pos = table.remove(positions, 1)
+      current_level[#current_level + 1] = pos
+    else
+      local sub_tree = build_structure(positions, child_namespaces, opts)
+      if opts.nested_tests or parent.type ~= "test" then
+        current_level[#current_level + 1] = sub_tree
+      end
+    end
+  end
+end
+
 ---@param source string
 ---@param captured_nodes any
 ---@param tests_in_file table<string, TestCase>
@@ -41,6 +87,7 @@ local function build_position(source, captured_nodes, tests_in_file, path)
   if match_type then
     local definition = captured_nodes[match_type .. ".definition"]
 
+    ---@type neotest.Position[]
     local positions = {}
 
     if match_type == "test" then
@@ -68,6 +115,18 @@ local function build_position(source, captured_nodes, tests_in_file, path)
         range = { definition:range() },
       })
     end
+
+    if #positions > 1 then
+      local pos = positions[1]
+      table.insert(positions, 1, {
+        type = "parameterized",
+        path = pos.path,
+        -- remove parameterized part of test name
+        name = pos.name:gsub("<.*>", ""):gsub("%(.*%)", ""),
+        range = pos.range,
+      })
+    end
+
     return positions
   end
 end
@@ -120,8 +179,11 @@ DotnetNeotestAdapter.discover_positions = function(path)
       end
     end
 
-    tree = lib.positions.parse_tree(nodes, {
-      nested_tests = true,
+    logger.info("neotest-dotnet: sorted test cases:")
+    logger.info(nodes)
+
+    local structure = assert(build_structure(nodes, {}, {
+      nested_tests = false,
       require_namespaces = false,
       position_id = function(position, parents)
         return position.id
@@ -136,8 +198,15 @@ DotnetNeotestAdapter.discover_positions = function(path)
             :flatten()
             :join("::")
       end,
-    })
+    }))
+
+    tree = types.Tree.from_list(structure, function(pos)
+      return pos.id
+    end)
   end
+
+  logger.info("neotest-dotnet: test case tree:")
+  logger.info(tree)
 
   logger.info(string.format("neotest-dotnet: done scanning %s for tests", path))
 
