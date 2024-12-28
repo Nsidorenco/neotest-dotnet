@@ -1,26 +1,26 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
-local utils = require("neotest.utils")
 local types = require("neotest.types")
 local logger = require("neotest.logging")
 
 local vstest = require("neotest-dotnet.vstest_wrapper")
+local vstest_strategy = require("neotest-dotnet.strategies.vstest")
 
 ---@package
 ---@type neotest.Adapter
 local DotnetNeotestAdapter = { name = "neotest-dotnet" }
 
-DotnetNeotestAdapter.root = function(path)
+function DotnetNeotestAdapter.root(path)
   return lib.files.match_root_pattern("*.sln")(path)
     or lib.files.match_root_pattern("*.[cf]sproj")(path)
 end
 
-DotnetNeotestAdapter.is_test_file = function(file_path)
+function DotnetNeotestAdapter.is_test_file(file_path)
   return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
     and vstest.discover_tests(file_path)
 end
 
-DotnetNeotestAdapter.filter_dir = function(name)
+function DotnetNeotestAdapter.filter_dir(name)
   return name ~= "bin" and name ~= "obj"
 end
 
@@ -131,7 +131,7 @@ local function build_position(source, captured_nodes, tests_in_file, path)
   end
 end
 
-DotnetNeotestAdapter.discover_positions = function(path)
+function DotnetNeotestAdapter.discover_positions(path)
   logger.info(string.format("neotest-dotnet: scanning %s for tests...", path))
 
   local filetype = (vim.endswith(path, ".fs") and "fsharp") or "c_sharp"
@@ -179,9 +179,6 @@ DotnetNeotestAdapter.discover_positions = function(path)
       end
     end
 
-    logger.info("neotest-dotnet: sorted test cases:")
-    logger.info(nodes)
-
     local structure = assert(build_structure(nodes, {}, {
       nested_tests = false,
       require_namespaces = false,
@@ -205,15 +202,12 @@ DotnetNeotestAdapter.discover_positions = function(path)
     end)
   end
 
-  logger.info("neotest-dotnet: test case tree:")
-  logger.info(tree)
-
   logger.info(string.format("neotest-dotnet: done scanning %s for tests", path))
 
   return tree
 end
 
-DotnetNeotestAdapter.build_spec = function(args)
+function DotnetNeotestAdapter.build_spec(args)
   local tree = args.tree
   if not tree then
     return
@@ -243,7 +237,7 @@ DotnetNeotestAdapter.build_spec = function(args)
     local attached_path = nio.fn.tempname()
 
     local pid = vstest.debug_tests(attached_path, stream_path, results_path, ids)
-    --- @type Configuration
+    --- @type dap.Configuration
     strategy = {
       type = "netcoredbg",
       name = "netcoredbg - attach",
@@ -252,7 +246,7 @@ DotnetNeotestAdapter.build_spec = function(args)
       env = {
         DOTNET_ENVIRONMENT = "Development",
       },
-      processId = vim.trim(pid),
+      processId = pid and vim.trim(pid),
       before = function()
         local dap = require("dap")
         dap.listeners.after.configurationDone["neotest-dotnet"] = function()
@@ -266,10 +260,11 @@ DotnetNeotestAdapter.build_spec = function(args)
   end
 
   return {
-    command = vstest.run_tests(args.strategy == "dap", stream_path, results_path, ids),
     context = {
       result_path = results_path,
+      stream_path = stream_path,
       stop_stream = stop_stream,
+      ids = ids,
     },
     stream = function()
       return function()
@@ -282,19 +277,31 @@ DotnetNeotestAdapter.build_spec = function(args)
         return results
       end
     end,
-    strategy = strategy,
+    strategy = strategy or vstest_strategy,
   }
 end
 
-DotnetNeotestAdapter.results = function(spec)
+function DotnetNeotestAdapter.results(spec, _result, _tree)
   local max_wait = 5 * 50 * 1000 -- 5 min
+  logger.info("neotest-dotnet: waiting for test results")
   local success, data = pcall(vstest.spin_lock_wait_file, spec.context.result_path, max_wait)
 
   spec.context.stop_stream()
 
+  logger.info("neotest-dotnet: parsing test results")
+
   local results = {}
 
   if not success then
+    for _, id in ipairs(spec.context.ids) do
+      results[id] = {
+        status = "skipped",
+        output = spec.context.result_path,
+        errors = {
+          message = "failed to read result file",
+        },
+      }
+    end
     return results
   end
 
@@ -302,13 +309,15 @@ DotnetNeotestAdapter.results = function(spec)
   assert(parse_ok, "failed to parse result file")
 
   if not parse_ok then
-    local outcome = "skipped"
-    results[spec.context.id] = {
-      status = outcome,
-      errors = {
-        message = "failed to parse result file",
-      },
-    }
+    for _, id in ipairs(spec.context.ids) do
+      results[id] = {
+        status = "skipped",
+        output = spec.context.result_path,
+        errors = {
+          message = "failed to parse result file",
+        },
+      }
+    end
 
     return results
   end

@@ -42,7 +42,8 @@ module TestDiscovery =
 
             {| StreamPath = args[0]
                OutputPath = args[1]
-               Ids = args[2..] |> Array.map Guid.Parse |}
+               ProcessOutput = args[2]
+               Ids = args[3..] |> Array.map Guid.Parse |}
             |> ValueOption.Some
         else
             ValueOption.None
@@ -56,7 +57,8 @@ module TestDiscovery =
                AttachedPath = args[1]
                StreamPath = args[2]
                OutputPath = args[3]
-               Ids = args[4..] |> Array.map Guid.Parse |}
+               ProcessOutput = args[4]
+               Ids = args[5..] |> Array.map Guid.Parse |}
             |> ValueOption.Some
         else
             ValueOption.None
@@ -99,8 +101,9 @@ module TestDiscovery =
 
             member __.HandleRawMessage(_) = ()
 
-    type PlaygroundTestRunHandler(streamOutputPath, outputFilePath) =
+    type PlaygroundTestRunHandler(streamOutputPath, outputFilePath, processOutputPath) =
         let resultsDictionary = ConcurrentDictionary()
+        let processOutputWriter = new StreamWriter(processOutputPath, append = true)
 
         interface ITestRunEventsHandler with
             member _.HandleTestRunComplete
@@ -109,7 +112,9 @@ module TestDiscovery =
                 use outputWriter = new StreamWriter(outputFilePath, append = false)
                 outputWriter.WriteLine(JsonConvert.SerializeObject(resultsDictionary))
 
-            member __.HandleLogMessage(level, message) = logHandler level message
+            member __.HandleLogMessage(_level, message) =
+                if not <| String.IsNullOrWhiteSpace message then
+                    processOutputWriter.WriteLine(message)
 
             member __.HandleRawMessage(_rawMessage) = ()
 
@@ -156,6 +161,9 @@ module TestDiscovery =
                     |> streamWriter.WriteLine
 
             member __.LaunchProcessWithDebuggerAttached(_testProcessStartInfo) = 1
+
+        interface IDisposable with
+            member _.Dispose() = processOutputWriter.Dispose()
 
     type DebugLauncher(pidFile: string, attachedFile: string) =
         interface ITestHostLauncher2 with
@@ -264,26 +272,35 @@ module TestDiscovery =
                 }
                 |> ignore
             | RunTests args ->
-                let testCases = getTestCases args.Ids
-
-                let testHandler = PlaygroundTestRunHandler(args.StreamPath, args.OutputPath)
-                // spawn as task to allow running concurrent tests
-                r.RunTestsAsync(testCases, sourceSettings, testHandler) |> ignore
-                ()
-            | DebugTests args ->
-                let testCases = getTestCases args.Ids
-
-                let testHandler = PlaygroundTestRunHandler(args.StreamPath, args.OutputPath)
-                let debugLauncher = DebugLauncher(args.PidPath, args.AttachedPath)
-                Console.WriteLine($"Starting {testCases.Length} tests in debug-mode")
-
                 task {
+                    let testCases = getTestCases args.Ids
+
+                    use testHandler =
+                        new PlaygroundTestRunHandler(args.StreamPath, args.OutputPath, args.ProcessOutput)
+                    // spawn as task to allow running concurrent tests
+                    do! r.RunTestsAsync(testCases, sourceSettings, testHandler)
+                    Console.WriteLine($"Done running tests for ids: ")
+
+                    for id in args.Ids do
+                        Console.Write($"{id} ")
+
+                    return ()
+                }
+                |> ignore
+            | DebugTests args ->
+                task {
+                    let testCases = getTestCases args.Ids
+
+                    use testHandler =
+                        new PlaygroundTestRunHandler(args.StreamPath, args.OutputPath, args.ProcessOutput)
+
+                    let debugLauncher = DebugLauncher(args.PidPath, args.AttachedPath)
+                    Console.WriteLine($"Starting {testCases.Length} tests in debug-mode")
+
                     do! Task.Yield()
                     r.RunTestsWithCustomTestHost(testCases, sourceSettings, testHandler, debugLauncher)
                 }
                 |> ignore
-
-                ()
             | _ -> loop <- false
 
         r.EndSession()

@@ -149,7 +149,7 @@ function M.spin_lock_wait_file(file_path, max_wait)
     if lib.files.exists(file_path) then
       spin_lock.with(function()
         file_exists = true
-        content = require("neotest.lib").files.read(file_path)
+        content = lib.files.read(file_path)
       end)
     else
       tries = tries + 1
@@ -328,28 +328,27 @@ function M.discover_tests(path)
 end
 
 ---runs tests identified by ids.
----@param dap boolean true if normal test runner should be skipped
 ---@param stream_path string
 ---@param output_path string
+---@param process_output_path string
 ---@param ids string|string[]
----@return string command
-function M.run_tests(dap, stream_path, output_path, ids)
-  if not dap then
-    lib.process.run({ "dotnet", "build" })
+---@return string wait_file
+function M.run_tests(stream_path, output_path, process_output_path, ids)
+  lib.process.run({ "dotnet", "build" })
 
-    local command = vim
-      .iter({
-        "run-tests",
-        stream_path,
-        output_path,
-        ids,
-      })
-      :flatten()
-      :join(" ")
-    invoke_test_runner(command)
-  end
+  local command = vim
+    .iter({
+      "run-tests",
+      stream_path,
+      output_path,
+      process_output_path,
+      ids,
+    })
+    :flatten()
+    :join(" ")
+  invoke_test_runner(command)
 
-  return string.format("tail -n 1 -f %s", output_path, output_path)
+  return output_path
 end
 
 --- Uses the vstest console to spawn a test process for the debugger to attach to.
@@ -361,6 +360,8 @@ end
 function M.debug_tests(attached_path, stream_path, output_path, ids)
   lib.process.run({ "dotnet", "build" })
 
+  local process_output = nio.fn.tempname()
+
   local pid_path = nio.fn.tempname()
 
   local command = vim
@@ -370,6 +371,7 @@ function M.debug_tests(attached_path, stream_path, output_path, ids)
       attached_path,
       stream_path,
       output_path,
+      process_output,
       ids,
     })
     :flatten()
