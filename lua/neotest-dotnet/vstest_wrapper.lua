@@ -66,18 +66,26 @@ function M.get_proj_info(path)
     return name:match("%.[cf]sproj$")
   end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
 
-  local dir_name = vim.fs.dirname(proj_file)
-  local proj_name = vim.fn.fnamemodify(proj_file, ":t:r")
+  local _, res = lib.process.run({
+    "dotnet",
+    "msbuild",
+    proj_file,
+    "-getProperty:OutputPath",
+    "-getProperty:AssemblyName",
+    "-getProperty:TargetExt",
+  }, {
+    stderr = false,
+    stdout = true,
+  })
 
-  local proj_dll_path =
-    -- TODO: this might break if the project has been compiled as both Development and Release.
-    vim.fs.find(function(name)
-      return string.lower(name) == string.lower(proj_name .. ".dll")
-    end, { type = "file", path = dir_name })[1]
+  local info = nio.fn.json_decode(res.stdout).Properties
+
+  local dir_name = vim.fs.dirname(proj_file)
 
   local proj_data = {
     proj_file = proj_file,
-    dll_file = proj_dll_path,
+    dll_file = vim.fs.joinpath(dir_name, info.OutputPath:gsub("\\", "/"), info.AssemblyName)
+      .. info.TargetExt,
     proj_dir = dir_name,
   }
 
