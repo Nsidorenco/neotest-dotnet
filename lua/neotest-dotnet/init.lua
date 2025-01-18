@@ -281,7 +281,7 @@ function DotnetNeotestAdapter.build_spec(args)
   }
 end
 
-function DotnetNeotestAdapter.results(spec, _result, _tree)
+function DotnetNeotestAdapter.results(spec, result, _tree)
   local max_wait = 5 * 50 * 1000 -- 5 min
   logger.info("neotest-dotnet: waiting for test results")
   local success, data = pcall(vstest.spin_lock_wait_file, spec.context.result_path, max_wait)
@@ -290,15 +290,17 @@ function DotnetNeotestAdapter.results(spec, _result, _tree)
 
   logger.info("neotest-dotnet: parsing test results")
 
+  ---@type table<string, neotest.Result>
   local results = {}
 
   if not success then
     for _, id in ipairs(spec.context.ids) do
       results[id] = {
-        status = "skipped",
+        status = types.ResultStatus.skipped,
         output = spec.context.result_path,
         errors = {
-          message = "failed to read result file",
+          { message = result.output },
+          { message = "failed to read result file" },
         },
       }
     end
@@ -311,10 +313,11 @@ function DotnetNeotestAdapter.results(spec, _result, _tree)
   if not parse_ok then
     for _, id in ipairs(spec.context.ids) do
       results[id] = {
-        status = "skipped",
+        status = types.ResultStatus.skipped,
         output = spec.context.result_path,
         errors = {
-          message = "failed to parse result file",
+          { message = result.output },
+          { message = "failed to parse result file" },
         },
       }
     end

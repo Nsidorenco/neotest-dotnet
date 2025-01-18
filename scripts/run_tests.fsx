@@ -18,6 +18,14 @@ open Microsoft.VisualStudio.TestPlatform.ObjectModel.Client
 open Microsoft.VisualStudio.TestPlatform.ObjectModel.Client.Interfaces
 open Microsoft.VisualStudio.TestPlatform.ObjectModel.Logging
 
+type NeoTestResultError = { message: string }
+
+type NeotestResult =
+    { status: string
+      short: string
+      output: string
+      errors: NeoTestResultError array }
+
 module TestDiscovery =
     let parseArgs (args: string) =
         args.Split(" ", StringSplitOptions.TrimEntries &&& StringSplitOptions.RemoveEmptyEntries)
@@ -142,16 +150,23 @@ module TestDiscovery =
 
                         let errors =
                             match errorMessage with
-                            | Some error -> [| {| message = error |} |]
+                            | Some error -> [| { message = error } |]
                             | None -> [||]
 
-                        result.TestCase.Id,
-                        {| status = outcome
-                           short = $"{result.TestCase.DisplayName}:{outcome}"
-                           errors = errors |})
+                        let id = result.TestCase.Id
 
-                for (id, result) in results do
-                    resultsDictionary.AddOrUpdate(id, result, (fun _ _ -> result)) |> ignore
+                        let neoTestResult =
+                            { status = outcome
+                              short = $"{result.TestCase.DisplayName}:{outcome}"
+                              output = Path.GetTempPath() + Guid.NewGuid().ToString()
+                              errors = errors }
+
+                        File.WriteAllText(neoTestResult.output, result.ToString())
+
+                        resultsDictionary.AddOrUpdate(id, neoTestResult, (fun _ _ -> neoTestResult))
+                        |> ignore
+
+                        (id, neoTestResult))
 
                 use streamWriter = new StreamWriter(streamOutputPath, append = true)
 
