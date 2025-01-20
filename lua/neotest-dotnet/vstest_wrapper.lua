@@ -70,9 +70,8 @@ function M.get_proj_info(path)
     "dotnet",
     "msbuild",
     proj_file,
-    "-getProperty:OutputPath",
-    "-getProperty:AssemblyName",
-    "-getProperty:TargetExt",
+    "-getProperty:TargetPath",
+    "-getProperty:MSBuildProjectDirectory",
   }, {
     stderr = false,
     stdout = true,
@@ -80,13 +79,10 @@ function M.get_proj_info(path)
 
   local info = nio.fn.json_decode(res.stdout).Properties
 
-  local dir_name = vim.fs.dirname(proj_file)
-
   local proj_data = {
     proj_file = proj_file,
-    dll_file = vim.fs.joinpath(dir_name, info.OutputPath:gsub("\\", "/"), info.AssemblyName)
-      .. info.TargetExt,
-    proj_dir = dir_name,
+    dll_file = info.TargetPath,
+    proj_dir = info.MSBuildProjectDirectory,
   }
 
   return proj_data
