@@ -142,16 +142,15 @@ function DotnetNeotestAdapter.discover_positions(path)
 
   if tests_in_file then
     local content = lib.files.read(path)
-    local lang = vim.treesitter.language.get_lang(filetype) or filetype
     nio.scheduler()
     tests_in_file = vim.fn.deepcopy(tests_in_file)
     local lang_tree =
-      vim.treesitter.get_string_parser(content, lang, { injections = { [lang] = "" } })
+      vim.treesitter.get_string_parser(content, filetype, { injections = { [filetype] = "" } })
 
     local root = lib.treesitter.fast_parse(lang_tree):root()
 
     local query = lib.treesitter.normalise_query(
-      lang,
+      filetype,
       filetype == "fsharp" and require("neotest-dotnet.queries.fsharp")
         or require("neotest-dotnet.queries.c_sharp")
     )
