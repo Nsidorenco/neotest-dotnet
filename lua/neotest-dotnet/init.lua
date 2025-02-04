@@ -17,6 +17,7 @@ end
 
 function DotnetNeotestAdapter.is_test_file(file_path)
   return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
+    and vstest.get_proj_info(file_path).is_test_project
     and vstest.discover_tests(file_path)
 end
 

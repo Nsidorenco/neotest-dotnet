@@ -58,32 +58,71 @@ local function get_script(script_name)
   end
 end
 
+local proj_info_cache = {}
+
 ---collects project information based on file
 ---@param path string
----@return { proj_file: string, dll_file: string, proj_dir: string }
+---@return { proj_file: string, dll_file: string, proj_dir: string, is_test_project: boolean }
 function M.get_proj_info(path)
   local proj_file = vim.fs.find(function(name, _)
     return name:match("%.[cf]sproj$")
   end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
 
+  if proj_info_cache[proj_file] then
+    return proj_info_cache[proj_file]
+  end
+
   local _, res = lib.process.run({
+    "dotnet",
+    "msbuild",
+    proj_file,
+    "-getProperty:TargetFrameworks",
+  }, {
+    stderr = false,
+    stdout = true,
+  })
+
+  local target_frameworks = vim.split(vim.trim(res.stdout or ""), ";", { trimempty = true })
+
+  table.sort(target_frameworks, function(a, b)
+    return a > b
+  end)
+
+  logger.debug("neotest-dotnet: msbuild target frameworks for " .. proj_file .. ":")
+  logger.debug(res.stdout)
+  logger.debug(target_frameworks)
+
+  local command = {
     "dotnet",
     "msbuild",
     proj_file,
     "-getProperty:TargetPath",
     "-getProperty:MSBuildProjectDirectory",
-  }, {
+    "-getProperty:IsTestProject",
+  }
+
+  if target_frameworks and #target_frameworks > 1 then
+    command[#command + 1] = "-property:TargetFramework=" .. target_frameworks[1]
+  end
+
+  local _, res = lib.process.run(command, {
     stderr = false,
     stdout = true,
   })
 
   local info = nio.fn.json_decode(res.stdout).Properties
 
+  logger.debug("neotest-dotnet: msbuild properties for " .. proj_file .. ":")
+  logger.debug(info)
+
   local proj_data = {
     proj_file = proj_file,
     dll_file = info.TargetPath,
     proj_dir = info.MSBuildProjectDirectory,
+    is_test_project = info.IsTestProject == "true",
   }
+
+  proj_info_cache[proj_file] = proj_data
 
   return proj_data
 end
@@ -183,9 +222,19 @@ function M.discover_tests(path)
   local json
   local proj_info = M.get_proj_info(path)
 
-  if not proj_info.proj_file then
+  if not proj_info.is_test_project then
+    logger.info(string.format("neotest-dotnet: %s is not a test project. Skipping.", path))
+    return
+  end
+
+  if proj_info.proj_file == "" then
     logger.warn(string.format("neotest-dotnet: failed to find project file for %s", path))
-    return {}
+    return
+  end
+
+  if proj_info.dll_file == "" then
+    logger.warn(string.format("neotest-dotnet: failed to find dll file for %s", path))
+    return
   end
 
   local path_open_err, path_stats = nio.uv.fs_stat(path)
@@ -199,23 +248,24 @@ function M.discover_tests(path)
       and path_stats.mtime.sec <= last_discovery[proj_info.proj_file]
     )
   then
-    local exitCode, stdout = lib.process.run(
+    local exitCode, out = lib.process.run(
       { "dotnet", "build", proj_info.proj_file },
       { stdout = true, stderr = true }
     )
-    logger.debug(string.format("neotest-dotnet: dotnet build status code: %s", exitCode))
-    logger.debug(stdout)
-  end
-
-  proj_info = M.get_proj_info(path)
-
-  if not proj_info.dll_file then
-    logger.warn(string.format("neotest-dotnet: failed to find project dll for %s", path))
-    return {}
+    if exitCode ~= 0 then
+      nio.scheduler()
+      vim.notify_once(
+        "neotest-dotnet: failed to build project " .. proj_info.proj_file .. "\n" .. out.stdout,
+        vim.log.levels.ERROR
+      )
+    end
   end
 
   local dll_open_err, dll_stats = nio.uv.fs_stat(proj_info.dll_file)
-  assert(not dll_open_err, dll_open_err)
+  assert(
+    not dll_open_err,
+    "failed to read dll file for " .. proj_info.dll_file .. " reason: " .. (dll_open_err or "")
+  )
 
   local path_modified_time = dll_stats and dll_stats.mtime and dll_stats.mtime.sec
 
@@ -248,6 +298,7 @@ function M.discover_tests(path)
 
   local dlls = {}
 
+  -- run discovery for all projects in the solution to populate cache initially.
   if vim.tbl_isempty(discovery_cache) then
     local root = lib.files.match_root_pattern("*.sln")(path)
       or lib.files.match_root_pattern("*.[cf]sproj")(path)
@@ -259,18 +310,11 @@ function M.discover_tests(path)
     end, { type = "file", path = root, limit = math.huge })
 
     for _, project in ipairs(projects) do
-      local dir_name = vim.fs.dirname(project)
-      local proj_name = vim.fn.fnamemodify(project, ":t:r")
+      local local_proj_info = M.get_proj_info(project)
 
-      local proj_dll_path =
-        -- TODO: this might break if the project has been compiled as both Development and Release.
-        vim.fs.find(function(name)
-          return string.lower(name) == string.lower(proj_name .. ".dll")
-        end, { type = "file", path = dir_name })[1]
-
-      if proj_dll_path then
-        dlls[#dlls + 1] = proj_dll_path
-        local project_open_err, project_stats = nio.uv.fs_stat(proj_dll_path)
+      if local_proj_info.is_test_project and local_proj_info.dll_file then
+        dlls[#dlls + 1] = local_proj_info.dll_file
+        local project_open_err, project_stats = nio.uv.fs_stat(local_proj_info.dll_file)
         last_discovery[project] = not project_open_err
           and project_stats
           and project_stats.mtime
