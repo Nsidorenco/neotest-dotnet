@@ -35,8 +35,7 @@ local function get_vstest_path()
         logger.info(string.format("neotest-dotnet: detected sdk path: %s", M.sdk_path))
       else
         M.sdk_path = default_sdk_path
-        local log_string =
-          string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
+        string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
         vim.notify_once(log_string)
         logger.info(log_string)
       end
@@ -76,21 +75,29 @@ function M.get_proj_info(path)
     "dotnet",
     "msbuild",
     proj_file,
+    "-getProperty:TargetFramework",
     "-getProperty:TargetFrameworks",
   }, {
     stderr = false,
     stdout = true,
   })
 
-  local target_frameworks = vim.split(vim.trim(res.stdout or ""), ";", { trimempty = true })
-
-  table.sort(target_frameworks, function(a, b)
-    return a > b
-  end)
-
   logger.debug("neotest-dotnet: msbuild target frameworks for " .. proj_file .. ":")
   logger.debug(res.stdout)
-  logger.debug(target_frameworks)
+
+  local framework_info = nio.fn.json_decode(res.stdout).Properties
+  local target_framework
+
+  if framework_info.TargetFramework == "" then
+    local frameworks =
+      vim.split(vim.trim(framework_info.TargetFrameworks), ";", { trimempty = true })
+    table.sort(frameworks, function(a, b)
+      return a > b
+    end)
+    target_framework = frameworks[1]
+  else
+    target_framework = vim.trim(framework_info.TargetFramework)
+  end
 
   local command = {
     "dotnet",
@@ -99,11 +106,8 @@ function M.get_proj_info(path)
     "-getProperty:TargetPath",
     "-getProperty:MSBuildProjectDirectory",
     "-getProperty:IsTestProject",
+    "-property:TargetFramework=" .. target_framework,
   }
-
-  if target_frameworks and #target_frameworks > 1 then
-    command[#command + 1] = "-property:TargetFramework=" .. target_frameworks[1]
-  end
 
   local _, res = lib.process.run(command, {
     stderr = false,
@@ -121,6 +125,12 @@ function M.get_proj_info(path)
     proj_dir = info.MSBuildProjectDirectory,
     is_test_project = info.IsTestProject == "true",
   }
+
+  if proj_data.dll_file == "" then
+    logger.debug("neotest-dotnet: failed to find dll file for " .. proj_file)
+    logger.debug(path)
+    logger.debug(res.stdout)
+  end
 
   proj_info_cache[proj_file] = proj_data
 
@@ -298,39 +308,8 @@ function M.discover_tests(path)
 
   local dlls = {}
 
-  -- run discovery for all projects in the solution to populate cache initially.
-  if vim.tbl_isempty(discovery_cache) then
-    local root = lib.files.match_root_pattern("*.sln")(path)
-      or lib.files.match_root_pattern("*.[cf]sproj")(path)
-
-    logger.debug(string.format("neotest-dotnet: root: %s", root))
-
-    local projects = vim.fs.find(function(name, _)
-      return name:match("%.[cf]sproj$")
-    end, { type = "file", path = root, limit = math.huge })
-
-    for _, project in ipairs(projects) do
-      local local_proj_info = M.get_proj_info(project)
-
-      if local_proj_info.is_test_project and local_proj_info.dll_file then
-        dlls[#dlls + 1] = local_proj_info.dll_file
-        local project_open_err, project_stats = nio.uv.fs_stat(local_proj_info.dll_file)
-        last_discovery[project] = not project_open_err
-          and project_stats
-          and project_stats.mtime
-          and project_stats.mtime.sec
-      else
-        logger.warn(string.format("neotest-dotnet: failed to find dll for %s", project))
-      end
-    end
-  else
-    dlls = { proj_info.dll_file }
-    last_discovery[proj_info.proj_file] = path_modified_time
-  end
-
-  if vim.tbl_isempty(dlls) then
-    return {}
-  end
+  dlls = { proj_info.dll_file }
+  last_discovery[proj_info.proj_file] = path_modified_time
 
   local wait_file = nio.fn.tempname()
   local output_file = nio.fn.tempname()
@@ -357,8 +336,7 @@ function M.discover_tests(path)
 
   local max_wait = 60 * 1000 -- 60 sec
 
-  local done = M.spin_lock_wait_file(wait_file, max_wait)
-  if done then
+  if M.spin_lock_wait_file(wait_file, max_wait) then
     local content = M.spin_lock_wait_file(output_file, max_wait)
 
     logger.debug("neotest-dotnet: file has been populated. Extracting test cases...")
