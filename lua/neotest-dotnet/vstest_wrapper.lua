@@ -1,6 +1,7 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
 local logger = require("neotest.logging")
+local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
 local M = {}
 
@@ -57,91 +58,11 @@ local function get_script(script_name)
   end
 end
 
-local proj_info_cache = {}
-
----collects project information based on file
----@param path string
----@return { proj_file: string, dll_file: string, proj_dir: string, is_test_project: boolean }
-function M.get_proj_info(path)
-  local proj_file = vim.fs.find(function(name, _)
-    return name:match("%.[cf]sproj$")
-  end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
-
-  if proj_info_cache[proj_file] then
-    return proj_info_cache[proj_file]
-  end
-
-  local _, res = lib.process.run({
-    "dotnet",
-    "msbuild",
-    proj_file,
-    "-getProperty:TargetFramework",
-    "-getProperty:TargetFrameworks",
-  }, {
-    stderr = false,
-    stdout = true,
-  })
-
-  logger.debug("neotest-dotnet: msbuild target frameworks for " .. proj_file .. ":")
-  logger.debug(res.stdout)
-
-  local framework_info = nio.fn.json_decode(res.stdout).Properties
-  local target_framework
-
-  if framework_info.TargetFramework == "" then
-    local frameworks =
-      vim.split(vim.trim(framework_info.TargetFrameworks), ";", { trimempty = true })
-    table.sort(frameworks, function(a, b)
-      return a > b
-    end)
-    target_framework = frameworks[1]
-  else
-    target_framework = vim.trim(framework_info.TargetFramework)
-  end
-
-  local command = {
-    "dotnet",
-    "msbuild",
-    proj_file,
-    "-getProperty:TargetPath",
-    "-getProperty:MSBuildProjectDirectory",
-    "-getProperty:IsTestProject",
-    "-property:TargetFramework=" .. target_framework,
-  }
-
-  local _, res = lib.process.run(command, {
-    stderr = false,
-    stdout = true,
-  })
-
-  local info = nio.fn.json_decode(res.stdout).Properties
-
-  logger.debug("neotest-dotnet: msbuild properties for " .. proj_file .. ":")
-  logger.debug(info)
-
-  local proj_data = {
-    proj_file = proj_file,
-    dll_file = info.TargetPath,
-    proj_dir = info.MSBuildProjectDirectory,
-    is_test_project = info.IsTestProject == "true",
-  }
-
-  if proj_data.dll_file == "" then
-    logger.debug("neotest-dotnet: failed to find dll file for " .. proj_file)
-    logger.debug(path)
-    logger.debug(res.stdout)
-  end
-
-  proj_info_cache[proj_file] = proj_data
-
-  return proj_data
-end
-
 local test_runner
-local semaphore = nio.control.semaphore(1)
+local test_runner_semaphore = nio.control.semaphore(1)
 
 local function invoke_test_runner(command)
-  semaphore.with(function()
+  test_runner_semaphore.with(function()
     if test_runner ~= nil then
       return
     end
@@ -226,103 +147,59 @@ local last_discovery = {}
 ---@field FullyQualifiedName string
 ---@field LineNumber integer
 
----@param path string
----@return table<string, TestCase> | nil test_cases map from id -> test case
-function M.discover_tests(path)
-  local json
-  local proj_info = M.get_proj_info(path)
+local project_semaphore = nio.control.semaphore(1)
+local project_semaphores = {}
 
-  if not proj_info.is_test_project then
-    logger.info(string.format("neotest-dotnet: %s is not a test project. Skipping.", path))
-    return
-  end
-
-  if proj_info.proj_file == "" then
-    logger.warn(string.format("neotest-dotnet: failed to find project file for %s", path))
-    return
-  end
-
-  if proj_info.dll_file == "" then
-    logger.warn(string.format("neotest-dotnet: failed to find dll file for %s", path))
-    return
-  end
-
-  local path_open_err, path_stats = nio.uv.fs_stat(path)
+---@param project DotnetProjectInfo
+---@return integer?
+local function get_project_last_modified(project)
+  local path_open_err, path_stats = nio.uv.fs_stat(project.dll_file)
 
   if
     not (
       not path_open_err
       and path_stats
       and path_stats.mtime
-      and last_discovery[proj_info.proj_file]
-      and path_stats.mtime.sec <= last_discovery[proj_info.proj_file]
+      and last_discovery[project.proj_file]
+      and path_stats.mtime.sec <= last_discovery[project.proj_file]
     )
   then
     local exitCode, out = lib.process.run(
-      { "dotnet", "build", proj_info.proj_file },
+      { "dotnet", "build", project.proj_file },
       { stdout = true, stderr = true }
     )
     if exitCode ~= 0 then
       nio.scheduler()
       vim.notify_once(
-        "neotest-dotnet: failed to build project " .. proj_info.proj_file .. "\n" .. out.stdout,
+        "neotest-dotnet: failed to build project " .. project.proj_file .. "\n" .. out.stdout,
         vim.log.levels.ERROR
       )
     end
   end
 
-  local dll_open_err, dll_stats = nio.uv.fs_stat(proj_info.dll_file)
+  local dll_open_err, dll_stats = nio.uv.fs_stat(project.dll_file)
   assert(
     not dll_open_err,
-    "failed to read dll file for " .. proj_info.dll_file .. " reason: " .. (dll_open_err or "")
+    "failed to read dll file for " .. project.dll_file .. " reason: " .. (dll_open_err or "")
   )
 
-  local path_modified_time = dll_stats and dll_stats.mtime and dll_stats.mtime.sec
+  return dll_stats and dll_stats.mtime and dll_stats.mtime.sec
+end
 
-  if
-    last_discovery[proj_info.proj_file]
-    and path_modified_time
-    and path_modified_time <= last_discovery[proj_info.proj_file]
-  then
-    logger.debug(
-      string.format(
-        "neotest-dotnet: cache hit for %s. %s - %s",
-        proj_info.proj_file,
-        path_modified_time,
-        last_discovery[proj_info.proj_file]
-      )
-    )
-    return discovery_cache[path]
-  else
-    logger.debug(
-      string.format(
-        "neotest-dotnet: cache miss for %s... path: %s cache: %s - %s",
-        path,
-        path_modified_time,
-        proj_info.proj_file,
-        last_discovery[proj_info.dll_file]
-      )
-    )
-    logger.debug(last_discovery)
-  end
-
-  local dlls = {}
-
-  dlls = { proj_info.dll_file }
-  last_discovery[proj_info.proj_file] = path_modified_time
+---@param project DotnetProjectInfo
+---@return table?
+local function discovery_tests_in_project(project)
+  local json
 
   local wait_file = nio.fn.tempname()
   local output_file = nio.fn.tempname()
-
-  logger.debug("neotest-dotnet: found dlls:")
-  logger.debug(dlls)
 
   local command = vim
     .iter({
       "discover",
       output_file,
       wait_file,
-      dlls,
+      { project.dll_file },
     })
     :flatten()
     :join(" ")
@@ -344,11 +221,71 @@ function M.discover_tests(path)
     json = (content and vim.json.decode(content, { luanil = { object = true } })) or {}
 
     logger.debug("neotest-dotnet: done decoding test cases.")
+  end
 
+  return json
+end
+
+---@param path string
+---@return table<string, TestCase> | nil test_cases map from id -> test case
+function M.discover_tests(path)
+  path = vim.fn.fnamemodify(path, ":p")
+  local project = dotnet_utils.get_proj_info(path)
+
+  if not project.is_test_project then
+    logger.info(string.format("neotest-dotnet: %s is not a test project. Skipping.", path))
+    return
+  end
+
+  if project.proj_file == "" then
+    logger.warn(string.format("neotest-dotnet: failed to find project file for %s", path))
+    return
+  end
+
+  if project.dll_file == "" then
+    logger.warn(string.format("neotest-dotnet: failed to find dll file for %s", path))
+    return
+  end
+
+  local semaphore
+
+  project_semaphore.with(function()
+    if project_semaphores[project.proj_file] then
+      semaphore = project_semaphores[project.proj_file]
+    else
+      project_semaphores[project.proj_file] = nio.control.semaphore(1)
+      semaphore = project_semaphores[project.proj_file]
+    end
+  end)
+
+  semaphore.acquire()
+  logger.debug("acquired semaphore for " .. project.proj_file .. " on path: " .. path)
+
+  local project_last_modified = get_project_last_modified(project)
+
+  if
+    last_discovery[project.proj_file]
+    and project_last_modified
+    and project_last_modified <= last_discovery[project.proj_file]
+  then
+    semaphore.release()
+    logger.debug(
+      "released semaphore for " .. project.proj_file .. " on path: " .. path .. " due to cache hit"
+    )
+    return discovery_cache[path]
+  end
+
+  local json = discovery_tests_in_project(project)
+  last_discovery[project.proj_file] = project_last_modified
+
+  if json then
     for file_path, test_map in pairs(json) do
       discovery_cache[file_path] = test_map
     end
   end
+
+  semaphore.release()
+  logger.debug("released semaphore for " .. project.proj_file .. " on path: " .. path)
 
   return json and json[path]
 end
@@ -412,6 +349,22 @@ function M.debug_tests(attached_path, stream_path, output_path, ids)
   local max_wait = 30 * 1000 -- 30 sec
 
   return M.spin_lock_wait_file(pid_path, max_wait)
+end
+
+function M.dispose()
+  if test_runner then
+    test_runner("exit")
+    test_runner = nil
+  end
+end
+
+function M.discover_tests_for_solution(root)
+  local projects = dotnet_utils.get_solution_projects(root)
+  for _, project in ipairs(projects) do
+    M.discover_tests(project)
+  end
+
+  return projects
 end
 
 return M

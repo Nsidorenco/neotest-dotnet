@@ -5,6 +5,7 @@ local logger = require("neotest.logging")
 
 local vstest = require("neotest-dotnet.vstest_wrapper")
 local vstest_strategy = require("neotest-dotnet.strategies.vstest")
+local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
 ---@package
 ---@type neotest.Adapter
@@ -12,17 +13,26 @@ local DotnetNeotestAdapter = { name = "neotest-dotnet" }
 
 function DotnetNeotestAdapter.root(path)
   return lib.files.match_root_pattern("*.sln")(path)
+    or lib.files.match_root_pattern("*.slnx")(path)
     or lib.files.match_root_pattern("*.[cf]sproj")(path)
 end
 
 function DotnetNeotestAdapter.is_test_file(file_path)
   return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
-    and vstest.get_proj_info(file_path).is_test_project
     and vstest.discover_tests(file_path)
 end
 
-function DotnetNeotestAdapter.filter_dir(name)
-  return name ~= "bin" and name ~= "obj"
+function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
+  if name == "bin" or name == "obj" then
+    return false
+  end
+
+  local projects = vstest.discover_tests_for_solution(root)
+
+  return vim.iter(projects):any(function(project)
+    return vim.fs.relpath(vim.fs.dirname(project), rel_path) ~= nil
+      or vim.fs.relpath(rel_path, vim.fs.dirname(project)) ~= nil
+  end)
 end
 
 local function get_match_type(captured_nodes)
@@ -139,6 +149,10 @@ function DotnetNeotestAdapter.discover_positions(path)
 
   local tests_in_file = vstest.discover_tests(path)
 
+  if not tests_in_file or next(tests_in_file) == nil then
+    return
+  end
+
   local tree
 
   if tests_in_file then
@@ -242,7 +256,7 @@ function DotnetNeotestAdapter.build_spec(args)
       type = "netcoredbg",
       name = "netcoredbg - attach",
       request = "attach",
-      cwd = vstest.get_proj_info(pos.path).proj_dir,
+      cwd = dotnet_utils.get_proj_info(pos.path).proj_dir,
       env = {
         DOTNET_ENVIRONMENT = "Development",
       },
