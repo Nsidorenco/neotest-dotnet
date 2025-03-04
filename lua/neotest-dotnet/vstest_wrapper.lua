@@ -36,9 +36,10 @@ local function get_vstest_path()
         logger.info(string.format("neotest-dotnet: detected sdk path: %s", M.sdk_path))
       else
         M.sdk_path = default_sdk_path
-        string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
-        vim.notify_once(log_string)
+        local log_string =
+          string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
         logger.info(log_string)
+        vim.notify_once(log_string)
       end
       process.close()
     end
