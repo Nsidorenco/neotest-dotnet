@@ -33,21 +33,45 @@ function M.get_proj_info(path)
     return proj_info_cache[proj_file]
   end
 
-  local _, res = lib.process.run({
+  local code, res = lib.process.run({
     "dotnet",
     "msbuild",
     proj_file,
     "-getProperty:TargetFramework",
     "-getProperty:TargetFrameworks",
   }, {
-    stderr = false,
+    stderr = true,
     stdout = true,
   })
 
   logger.debug("neotest-dotnet: msbuild target frameworks for " .. proj_file .. ":")
   logger.debug(res.stdout)
 
-  local framework_info = nio.fn.json_decode(res.stdout).Properties
+  if code ~= 0 then
+    logger.error("neotest-dotnet: failed to get msbuild target framework for " .. proj_file)
+    logger.error(res.stderr)
+
+    nio.scheduler()
+    vim.notify(
+      "Failed to get msbuild target framework for " .. proj_file .. " with error: " .. res.stderr,
+      vim.log.levels.ERROR
+    )
+  end
+
+  local ok, parsed = pcall(nio.fn.json_decode, res.stdout)
+
+  if not ok then
+    logger.error("neotest-dotnet: failed to parse msbuild target framework for " .. proj_file)
+    logger.error(parsed)
+
+    nio.scheduler()
+    vim.notify(
+      "Failed to parse msbuild target framework for " .. proj_file .. " with error: " .. parsed,
+      vim.log.levels.ERROR
+    )
+  end
+
+  local framework_info = parsed.Properties
   local target_framework
 
   if framework_info.TargetFramework == "" then
