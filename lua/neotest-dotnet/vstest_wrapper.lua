@@ -26,8 +26,9 @@ local function get_vstest_path()
       local log_string =
         string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
 
-      vim.notify_once(log_string)
       logger.info(log_string)
+      nio.scheduler()
+      vim.notify_once(log_string)
     else
       local out = process.stdout.read()
       local match = out and out:match("Base Path:%s*(%S+[^\n]*)")
@@ -39,6 +40,7 @@ local function get_vstest_path()
         local log_string =
           string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)
         logger.info(log_string)
+        nio.scheduler()
         vim.notify_once(log_string)
       end
       process.close()
