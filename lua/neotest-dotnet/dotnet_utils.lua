@@ -4,6 +4,14 @@ local logger = require("neotest.logging")
 
 local M = {}
 
+---parses output of running `dotnet --info`
+---@param input string
+---@return { sdk_path: string? }
+function M.parse_dotnet_info(input)
+  local match = input:match("Base Path:%s*(%S+[^\n]*)")
+  return { sdk_path = vim.trim(match) }
+end
+
 ---@class DotnetProjectInfo
 ---@field proj_file string
 ---@field dll_file string

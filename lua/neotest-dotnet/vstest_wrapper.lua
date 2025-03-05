@@ -31,9 +31,9 @@ local function get_vstest_path()
       vim.notify_once(log_string)
     else
       local out = process.stdout.read()
-      local match = out and out:match("Base Path:%s*(%S+[^\n]*)")
-      if match then
-        M.sdk_path = vim.trim(match)
+      local info = dotnet_utils.parse_dotnet_info(out or "")
+      if info.sdk_path then
+        M.sdk_path = info.sdk_path
         logger.info(string.format("neotest-dotnet: detected sdk path: %s", M.sdk_path))
       else
         M.sdk_path = default_sdk_path
@@ -290,7 +290,9 @@ function M.discover_tests(path)
   semaphore.release()
   logger.debug("released semaphore for " .. project.proj_file .. " on path: " .. path)
 
-  return json and json[path]
+  -- Some test adapters do not annotate the test cases with the file path.
+  -- So we return the root test cases as well.
+  return json and vim.tbl_deep_extend("force", json[""] or {}, json[path] or {})
 end
 
 ---runs tests identified by ids.
