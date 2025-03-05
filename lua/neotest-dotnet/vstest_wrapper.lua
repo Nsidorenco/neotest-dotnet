@@ -9,7 +9,7 @@ M.sdk_path = nil
 
 local function get_vstest_path()
   if not M.sdk_path then
-    local process, errors = nio.process.run({
+    local process = nio.process.run({
       cmd = "dotnet",
       args = { "--info" },
     })
@@ -21,7 +21,7 @@ local function get_vstest_path()
       default_sdk_path = "/usr/local/share/dotnet/sdk/"
     end
 
-    if not process or errors then
+    if not process then
       M.sdk_path = default_sdk_path
       local log_string =
         string.format("neotest-dotnet: failed to detect sdk path. falling back to %s", M.sdk_path)

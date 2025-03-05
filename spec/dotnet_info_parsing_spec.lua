@@ -1,7 +1,5 @@
 local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
-vim.print(dotnet_utils)
-
 describe("Dotnet info parsing should", function()
   it("parse sdk_path from dotnet 9.0.x output on macos", function()
     local output = [[
