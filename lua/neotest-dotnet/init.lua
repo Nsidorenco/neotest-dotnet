@@ -28,6 +28,7 @@ function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
   end
 
   local projects = vstest.discover_tests_for_solution(root)
+  rel_path = vim.fs.joinpath(root, rel_path)
 
   return vim.iter(projects):any(function(project)
     return vim.fs.relpath(vim.fs.dirname(project), rel_path) ~= nil

@@ -32,9 +32,13 @@ local discovery_semaphore = nio.control.semaphore(1)
 ---@param path string
 ---@return DotnetProjectInfo
 function M.get_proj_info(path)
+  logger.debug("neotest-dotnet: getting project info for " .. path)
+
   local proj_file = vim.fs.find(function(name, _)
     return name:match("%.[cf]sproj$")
   end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
+
+  logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
 
   proj_file = vim.fn.fnamemodify(proj_file, ":p")
 
@@ -153,7 +157,9 @@ function M.get_solution_projects(root)
     return name:match("%.slnx?$")
   end, { upward = false, type = "file", path = root, limit = 1 })[1]
 
-  local projects
+  local solution_dir = vim.fs.dirname(vim.fn.fnamemodify(solution, ":p"))
+
+  local projects = {}
 
   if solution then
     local _, res = lib.process.run({
@@ -169,7 +175,10 @@ function M.get_solution_projects(root)
     logger.debug("neotest-dotnet: dotnet sln " .. solution .. " list output:")
     logger.debug(res.stdout)
 
-    projects = vim.list_slice(nio.fn.split(res.stdout, "\n"), 3)
+    local relative_path_projects = vim.list_slice(nio.fn.split(res.stdout, "\n"), 3)
+    for _, project in ipairs(relative_path_projects) do
+      projects[#projects + 1] = vim.fs.joinpath(solution_dir, project)
+    end
   else
     logger.info("found no solution file in " .. root)
     projects = vim.fs.find(function(name, _)

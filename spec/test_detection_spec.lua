@@ -76,12 +76,13 @@ describe("Test test detection", function()
     local plugin = require("neotest-dotnet")
     local dir = vim.fn.getcwd() .. "/spec/samples/test_solution"
 
-    assert.is_true(plugin.filter_dir("/src/CSharpTest", "/src/CSharpTest", dir))
+    assert.is_true(plugin.filter_dir("CSharpTest", "/src/CSharpTest", dir))
   end)
 
   nio.tests.it("identify test file", function()
     local plugin = require("neotest-dotnet")
     local dir = vim.fn.getcwd() .. "/spec/samples/test_solution"
+
     local test_file = dir .. "/src/CSharpTest/UnitTest1.cs"
 
     assert.is_true(plugin.is_test_file(test_file))
@@ -90,6 +91,7 @@ describe("Test test detection", function()
   nio.tests.it("filter non-test file", function()
     local plugin = require("neotest-dotnet")
     local dir = vim.fn.getcwd() .. "/spec/samples/test_solution"
+
     local project_file = dir .. "/src/CSharpTest/CSharpTest.csproj"
 
     assert.is_false(plugin.is_test_file(project_file))
