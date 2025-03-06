@@ -292,7 +292,7 @@ function M.discover_tests(path)
 
   -- Some test adapters do not annotate the test cases with the file path.
   -- So we return the root test cases as well.
-  return json and vim.tbl_deep_extend("force", json[""] or {}, json[path] or {})
+  return (json and json[path]) or {}
 end
 
 ---runs tests identified by ids.
