@@ -66,7 +66,11 @@ require("neotest").setup({
     require("neotest-dotnet")({
       -- Path to dotnet sdk path.
       -- Used in cases where the sdk path cannot be auto discovered.
-      sdk_path = "/usr/local/dotnet/sdk/9.0.101/"
+      sdk_path = "/usr/local/dotnet/sdk/9.0.101/",
+      -- table is passed directly to DAP when debugging tests.
+      dap_settings = {
+        adapter = "netcoredbg",
+      }
     })
   }
 })

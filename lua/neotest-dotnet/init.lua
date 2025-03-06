@@ -7,6 +7,17 @@ local vstest = require("neotest-dotnet.vstest_wrapper")
 local vstest_strategy = require("neotest-dotnet.strategies.vstest")
 local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
+--- @type dap.Configuration
+local dap_settings = {
+  type = "netcoredbg",
+  name = "netcoredbg - attach",
+  request = "attach",
+  env = {
+    DOTNET_ENVIRONMENT = "Development",
+  },
+  justMyCode = false,
+}
+
 ---@package
 ---@type neotest.Adapter
 ---@diagnostic disable-next-line: missing-fields
@@ -260,14 +271,8 @@ function DotnetNeotestAdapter.build_spec(args)
 
     local pid = vstest.debug_tests(attached_path, stream_path, results_path, ids)
     --- @type dap.Configuration
-    strategy = {
-      type = "netcoredbg",
-      name = "netcoredbg - attach",
-      request = "attach",
+    strategy = vim.tbl_extend("force", dap_settings, {
       cwd = dotnet_utils.get_proj_info(pos.path).proj_dir,
-      env = {
-        DOTNET_ENVIRONMENT = "Development",
-      },
       processId = pid and vim.trim(pid),
       before = function()
         local dap = require("dap")
@@ -278,7 +283,7 @@ function DotnetNeotestAdapter.build_spec(args)
           end)
         end
       end,
-    }
+    })
   end
 
   return {
@@ -352,12 +357,17 @@ end
 
 ---@class neotest-dotnet.Config
 ---@field sdk_path? string path to dotnet sdk. Example: /usr/local/share/dotnet/sdk/9.0.101/
+---@field dap_settings? dap.Configuration dap settings for debugging
+
+---@param opts neotest-dotnet.Config
+local function apply_user_settings(_, opts)
+  vstest.sdk_path = opts.sdk_path
+  dap_settings = vim.tbl_extend("force", dap_settings, opts.dap_settings or {})
+  return DotnetNeotestAdapter
+end
 
 setmetatable(DotnetNeotestAdapter, {
-  __call = function(_, opts)
-    vstest.sdk_path = opts.sdk_path
-    return DotnetNeotestAdapter
-  end,
+  __call = apply_user_settings,
 })
 
 return DotnetNeotestAdapter
