@@ -19,7 +19,7 @@ end
 
 function DotnetNeotestAdapter.is_test_file(file_path)
   return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
-    and vstest.discover_tests(file_path)
+    and vstest.discover_tests(file_path) ~= nil
 end
 
 function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
