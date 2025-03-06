@@ -13,7 +13,7 @@ function M.parse_dotnet_info(input)
   end
 
   local match = input:match("Base Path:%s*(%S+[^\n]*)")
-  return { sdk_path = vim.trim(match) }
+  return { sdk_path = match and vim.trim(match) }
 end
 
 ---@class DotnetProjectInfo
@@ -92,13 +92,13 @@ function M.get_proj_info(path)
 
   if framework_info.TargetFramework == "" then
     local frameworks =
-      vim.split(vim.trim(framework_info.TargetFrameworks), ";", { trimempty = true })
+      vim.split(vim.trim(framework_info.TargetFrameworks or ""), ";", { trimempty = true })
     table.sort(frameworks, function(a, b)
       return a > b
     end)
     target_framework = frameworks[1]
   else
-    target_framework = vim.trim(framework_info.TargetFramework)
+    target_framework = vim.trim(framework_info.TargetFramework or "")
   end
 
   local command = {
