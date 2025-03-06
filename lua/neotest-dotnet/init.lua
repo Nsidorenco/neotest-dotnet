@@ -9,6 +9,7 @@ local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
 ---@package
 ---@type neotest.Adapter
+---@diagnostic disable-next-line: missing-fields
 local DotnetNeotestAdapter = { name = "neotest-dotnet" }
 
 function DotnetNeotestAdapter.root(path)
@@ -30,10 +31,16 @@ function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
   local projects = vstest.discover_tests_for_solution(root)
   rel_path = vim.fs.joinpath(root, rel_path)
 
-  return vim.iter(projects):any(function(project)
-    return vim.fs.relpath(vim.fs.dirname(project), rel_path) ~= nil
-      or vim.fs.relpath(rel_path, vim.fs.dirname(project)) ~= nil
-  end)
+  if vim.fn.has("nvim-0.11") == 1 then
+    return vim.iter(projects):any(function(project)
+      return vim.fs.relpath(vim.fs.dirname(project), rel_path) ~= nil
+        or vim.fs.relpath(rel_path, vim.fs.dirname(project)) ~= nil
+    end)
+  else
+    -- temp workaround for neovim version < 0.11
+    -- makes test discovery slightly slower since we will be scanning unnecessary directories.
+    return true
+  end
 end
 
 local function get_match_type(captured_nodes)
