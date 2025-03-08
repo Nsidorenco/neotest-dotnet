@@ -92,6 +92,9 @@ local function invoke_test_runner(command)
         end
       end,
     }, function(obj)
+      vim.schedule(function()
+        vim.notify_once("neotest-dotnet: vstest process exited unexpectedly.", vim.log.levels.ERROR)
+      end)
       logger.warn("neotest-dotnet: vstest process died :(")
       logger.warn(obj.code)
       logger.warn(obj.signal)
@@ -181,10 +184,15 @@ local function get_project_last_modified(project)
   end
 
   local dll_open_err, dll_stats = nio.uv.fs_stat(project.dll_file)
-  assert(
-    not dll_open_err,
-    "failed to read dll file for " .. project.dll_file .. " reason: " .. (dll_open_err or "")
-  )
+  if dll_open_err then
+    logger.warn(
+      "neotest-dotnet: failed to read dll file for "
+        .. project.dll_file
+        .. " reason: "
+        .. (dll_open_err or "")
+    )
+    return nil
+  end
 
   return dll_stats and dll_stats.mtime and dll_stats.mtime.sec
 end
@@ -302,8 +310,6 @@ end
 ---@param ids string|string[]
 ---@return string wait_file
 function M.run_tests(stream_path, output_path, process_output_path, ids)
-  lib.process.run({ "dotnet", "build" })
-
   local command = vim
     .iter({
       "run-tests",
@@ -326,8 +332,6 @@ end
 ---@param ids string|string[]
 ---@return string? pid
 function M.debug_tests(attached_path, stream_path, output_path, ids)
-  lib.process.run({ "dotnet", "build" })
-
   local process_output = nio.fn.tempname()
 
   local pid_path = nio.fn.tempname()

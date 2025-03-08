@@ -183,14 +183,12 @@ module TestDiscovery =
     type DebugLauncher(pidFile: string, attachedFile: string) =
         interface ITestHostLauncher2 with
             member this.LaunchTestHost(defaultTestHostStartInfo: TestProcessStartInfo) =
-                (this :> ITestHostLauncher)
-                    .LaunchTestHost(defaultTestHostStartInfo, CancellationToken.None)
+                (this :> ITestHostLauncher).LaunchTestHost(defaultTestHostStartInfo, CancellationToken.None)
 
             member _.LaunchTestHost(_defaultTestHostStartInfo: TestProcessStartInfo, _ct: CancellationToken) = 1
 
             member this.AttachDebuggerToProcess(pid: int) =
-                (this :> ITestHostLauncher2)
-                    .AttachDebuggerToProcess(pid, CancellationToken.None)
+                (this :> ITestHostLauncher2).AttachDebuggerToProcess(pid, CancellationToken.None)
 
             member _.AttachDebuggerToProcess(pid: int, ct: CancellationToken) =
                 use cts = CancellationTokenSource.CreateLinkedTokenSource(ct)
@@ -316,11 +314,14 @@ module TestDiscovery =
                     r.RunTestsWithCustomTestHost(testCases, sourceSettings, testHandler, debugLauncher)
                 }
                 |> ignore
-            | _ -> loop <- false
+            | input ->
+                Console.WriteLine($"Unknown command: {input}. Terminating process.")
+                Environment.ExitCode <- 1
+                loop <- false
 
         r.EndSession()
 
-        0
+        Environment.ExitCode
 
     let args = fsi.CommandLineArgs |> Array.tail
 
