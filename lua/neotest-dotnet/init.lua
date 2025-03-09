@@ -31,7 +31,7 @@ end
 
 function DotnetNeotestAdapter.is_test_file(file_path)
   return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
-    and vstest.discover_tests(file_path) ~= nil
+    and vstest.discover_tests(file_path)
 end
 
 function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
@@ -44,13 +44,16 @@ function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
 
   if vim.fn.has("nvim-0.11") == 1 then
     return vim.iter(projects):any(function(project)
-      return vim.fs.relpath(vim.fs.dirname(project), rel_path) ~= nil
-        or vim.fs.relpath(rel_path, vim.fs.dirname(project)) ~= nil
+      project = vim.fs.dirname(project)
+      return vim.fs.relpath(project, rel_path) ~= nil or vim.fs.relpath(rel_path, project) ~= nil
     end)
+  -- workaround for neovim version < 0.11
   else
-    -- temp workaround for neovim version < 0.11
-    -- makes test discovery slightly slower since we will be scanning unnecessary directories.
-    return true
+    return vim.iter(projects):any(function(project)
+      project = vim.fs.normalize(vim.fs.dirname(project))
+      return string.find(rel_path, project, 0, true) ~= nil
+        or string.find(project, rel_path, 0, true) ~= nil
+    end)
   end
 end
 

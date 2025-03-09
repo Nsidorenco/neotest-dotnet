@@ -143,13 +143,17 @@ end
 ---@type table<string, string[]>
 local project_cache = {}
 
+local solution_discovery_semaphore = nio.control.semaphore(1)
+
 ---lists all projects in solution.
 ---Falls back to listing all project in directory.
 ---@async
 ---@param root string
 ---@return string[]
 function M.get_solution_projects(root)
+  solution_discovery_semaphore.acquire()
   if project_cache[root] then
+    solution_discovery_semaphore.release()
     return project_cache[root]
   end
 
@@ -199,6 +203,8 @@ function M.get_solution_projects(root)
   logger.info(test_projects)
 
   project_cache[root] = test_projects
+
+  solution_discovery_semaphore.release()
 
   return test_projects
 end
