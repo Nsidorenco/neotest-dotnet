@@ -49,11 +49,7 @@ function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
     end)
   -- workaround for neovim version < 0.11
   else
-    return vim.iter(projects):any(function(project)
-      project = vim.fs.normalize(vim.fs.dirname(project))
-      return string.find(rel_path, project, 0, true) ~= nil
-        or string.find(project, rel_path, 0, true) ~= nil
-    end)
+    return true
   end
 end
 
