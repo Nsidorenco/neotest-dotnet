@@ -157,9 +157,10 @@ local project_semaphore = nio.control.semaphore(1)
 local project_semaphores = {}
 
 ---@param project DotnetProjectInfo
+---@param path string
 ---@return integer?
-local function get_project_last_modified(project)
-  local path_open_err, path_stats = nio.uv.fs_stat(project.dll_file)
+local function get_project_last_modified(project, path)
+  local path_open_err, path_stats = nio.uv.fs_stat(path)
 
   if
     not (
@@ -170,6 +171,7 @@ local function get_project_last_modified(project)
       and path_stats.mtime.sec <= last_discovery[project.proj_file]
     )
   then
+    logger.debug("neotest-dotnet: building project " .. project.proj_file)
     local exitCode, out = lib.process.run(
       { "dotnet", "build", project.proj_file },
       { stdout = true, stderr = true }
@@ -272,7 +274,7 @@ function M.discover_tests(path)
   semaphore.acquire()
   logger.debug("acquired semaphore for " .. project.proj_file .. " on path: " .. path)
 
-  local project_last_modified = get_project_last_modified(project)
+  local project_last_modified = get_project_last_modified(project, path)
 
   if
     last_discovery[project.proj_file]
@@ -281,7 +283,13 @@ function M.discover_tests(path)
   then
     semaphore.release()
     logger.debug(
-      "released semaphore for " .. project.proj_file .. " on path: " .. path .. " due to cache hit"
+      string.format(
+        "released semaphore for %s on path: %s due to cache hit. last modified: %s last discovery: %s",
+        project.proj_file,
+        path,
+        project_last_modified,
+        last_discovery[project.proj_file]
+      )
     )
     return discovery_cache[path]
   end
