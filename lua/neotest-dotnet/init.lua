@@ -211,6 +211,17 @@ function DotnetNeotestAdapter.discover_positions(path)
       end
     end
 
+    -- add tests which does not have a matching tree-sitter node.
+    for _, test in pairs(tests_in_file) do
+      nodes[#nodes + 1] = {
+        type = "test",
+        path = path,
+        name = test.DisplayName,
+        qualified_name = test.FullyQualifiedName,
+        range = { test.LineNumber - 1, 0, test.LineNumber - 1, -1 },
+      }
+    end
+
     local structure = assert(build_structure(nodes, {}, {
       nested_tests = false,
       require_namespaces = false,

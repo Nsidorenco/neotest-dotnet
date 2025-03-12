@@ -25,6 +25,8 @@ end
 ---@type table<string, DotnetProjectInfo>
 local proj_info_cache = {}
 
+local file_to_project_map = {}
+
 local discovery_semaphore = nio.control.semaphore(1)
 
 ---collects project information based on file
@@ -34,15 +36,22 @@ local discovery_semaphore = nio.control.semaphore(1)
 function M.get_proj_info(path)
   logger.debug("neotest-dotnet: getting project info for " .. path)
 
-  local proj_file = vim.fs.find(function(name, _)
-    return name:match("%.[cf]sproj$")
-  end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
+  discovery_semaphore.acquire()
+
+  local proj_file
+
+  if file_to_project_map[path] then
+    proj_file = file_to_project_map[path]
+  else
+    proj_file = vim.fs.find(function(name, _)
+      return name:match("%.[cf]sproj$")
+    end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
+    file_to_project_map[path] = proj_file
+  end
 
   logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
 
   proj_file = vim.fn.fnamemodify(proj_file, ":p")
-
-  discovery_semaphore.acquire()
 
   if proj_info_cache[proj_file] then
     discovery_semaphore.release()
@@ -105,6 +114,7 @@ function M.get_proj_info(path)
     "dotnet",
     "msbuild",
     proj_file,
+    "-getItem:Compile",
     "-getProperty:TargetPath",
     "-getProperty:MSBuildProjectDirectory",
     "-getProperty:IsTestProject",
@@ -116,16 +126,17 @@ function M.get_proj_info(path)
     stdout = true,
   })
 
-  local info = nio.fn.json_decode(res.stdout).Properties
+  local output = nio.fn.json_decode(res.stdout)
+  local properties = output.Properties
 
   logger.debug("neotest-dotnet: msbuild properties for " .. proj_file .. ":")
-  logger.debug(info)
+  logger.debug(properties)
 
   local proj_data = {
     proj_file = proj_file,
-    dll_file = info.TargetPath,
-    proj_dir = info.MSBuildProjectDirectory,
-    is_test_project = info.IsTestProject == "true",
+    dll_file = properties.TargetPath,
+    proj_dir = properties.MSBuildProjectDirectory,
+    is_test_project = properties.IsTestProject == "true",
   }
 
   if proj_data.dll_file == "" then
@@ -135,6 +146,10 @@ function M.get_proj_info(path)
   end
 
   proj_info_cache[proj_file] = proj_data
+
+  for _, item in ipairs(output.Items.Compile) do
+    file_to_project_map[item.FullPath] = proj_file
+  end
 
   discovery_semaphore.release()
   return proj_data
