@@ -242,7 +242,7 @@ end
 ---@param path string
 ---@return table<string, TestCase> | nil test_cases map from id -> test case
 function M.discover_tests(path)
-  path = vim.fs.abspath(path)
+  path = dotnet_utils.abspath(path)
   local project = dotnet_utils.get_proj_info(path)
 
   if not project.is_test_project then
@@ -299,16 +299,14 @@ function M.discover_tests(path)
   if json then
     last_discovery[project.proj_file] = project_last_modified
     for file_path, test_map in pairs(json) do
-      discovery_cache[vim.fs.abspath(file_path)] = test_map
+      discovery_cache[dotnet_utils.abspath(file_path)] = test_map
     end
   end
 
   semaphore.release()
   logger.debug("released semaphore for " .. project.proj_file .. " on path: " .. path)
 
-  -- Some test adapters do not annotate the test cases with the file path.
-  -- So we return the root test cases as well.
-  return (json and json[path]) or {}
+  return discovery_cache[path] or {}
 end
 
 ---runs tests identified by ids.
