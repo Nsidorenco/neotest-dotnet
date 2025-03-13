@@ -242,7 +242,7 @@ end
 ---@param path string
 ---@return table<string, TestCase> | nil test_cases map from id -> test case
 function M.discover_tests(path)
-  path = vim.fn.fnamemodify(path, ":p")
+  path = vim.fs.abspath(path)
   local project = dotnet_utils.get_proj_info(path)
 
   if not project.is_test_project then
@@ -295,11 +295,11 @@ function M.discover_tests(path)
   end
 
   local json = discovery_tests_in_project(project)
-  last_discovery[project.proj_file] = project_last_modified
 
   if json then
+    last_discovery[project.proj_file] = project_last_modified
     for file_path, test_map in pairs(json) do
-      discovery_cache[file_path] = test_map
+      discovery_cache[vim.fs.abspath(file_path)] = test_map
     end
   end
 
@@ -366,13 +366,6 @@ function M.debug_tests(attached_path, stream_path, output_path, ids)
   local max_wait = 30 * 1000 -- 30 sec
 
   return M.spin_lock_wait_file(pid_path, max_wait)
-end
-
-function M.dispose()
-  if test_runner then
-    test_runner("exit")
-    test_runner = nil
-  end
 end
 
 function M.discover_tests_for_solution(root)
