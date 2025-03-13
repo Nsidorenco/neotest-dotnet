@@ -306,9 +306,7 @@ function M.discover_tests(path)
   semaphore.release()
   logger.debug("released semaphore for " .. project.proj_file .. " on path: " .. path)
 
-  -- Some test adapters do not annotate the test cases with the file path.
-  -- So we return the root test cases as well.
-  return (json and json[path]) or {}
+  return discovery_cache[path] or {}
 end
 
 ---runs tests identified by ids.
