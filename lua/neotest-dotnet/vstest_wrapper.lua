@@ -366,13 +366,4 @@ function M.debug_tests(attached_path, stream_path, output_path, ids)
   return M.spin_lock_wait_file(pid_path, max_wait)
 end
 
-function M.discover_tests_for_solution(root)
-  local projects = dotnet_utils.get_solution_projects(root)
-  for _, project in ipairs(projects) do
-    M.discover_tests(project)
-  end
-
-  return projects
-end
-
 return M

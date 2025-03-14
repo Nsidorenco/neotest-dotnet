@@ -31,7 +31,7 @@ local proj_info_cache = {}
 
 local file_to_project_map = {}
 
-local discovery_semaphore = nio.control.semaphore(1)
+local project_semaphore = {}
 
 ---collects project information based on file
 ---@async
@@ -40,8 +40,6 @@ local discovery_semaphore = nio.control.semaphore(1)
 function M.get_proj_info(path)
   path = M.abspath(path)
   logger.debug("neotest-dotnet: getting project info for " .. path)
-
-  discovery_semaphore.acquire()
 
   local proj_file
 
@@ -54,10 +52,21 @@ function M.get_proj_info(path)
     file_to_project_map[path] = M.abspath(proj_file)
   end
 
+  local semaphore
+
+  if project_semaphore[proj_file] then
+    semaphore = project_semaphore[proj_file]
+  else
+    semaphore = nio.control.semaphore(1)
+    project_semaphore[proj_file] = semaphore
+  end
+
+  semaphore.acquire()
+
   logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
 
   if proj_info_cache[proj_file] then
-    discovery_semaphore.release()
+    semaphore.release()
     return proj_info_cache[proj_file]
   end
 
@@ -154,7 +163,7 @@ function M.get_proj_info(path)
     file_to_project_map[item.FullPath] = proj_file
   end
 
-  discovery_semaphore.release()
+  semaphore.release()
   return proj_data
 end
 
