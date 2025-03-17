@@ -277,7 +277,8 @@ function M.discover_tests(path)
   local project_last_modified = get_project_last_modified(project, path)
 
   if
-    last_discovery[project.proj_file]
+    discovery_cache[path]
+    and last_discovery[project.proj_file]
     and project_last_modified
     and project_last_modified <= last_discovery[project.proj_file]
   then
@@ -364,6 +365,52 @@ function M.debug_tests(attached_path, stream_path, output_path, ids)
   local max_wait = 30 * 1000 -- 30 sec
 
   return M.spin_lock_wait_file(pid_path, max_wait)
+end
+
+local solution_cache
+local solution_semaphore = nio.control.semaphore(1)
+
+function M.discovery_solution_tests(root)
+  if solution_cache then
+    return solution_cache
+  end
+
+  solution_semaphore.acquire()
+
+  local res = dotnet_utils.get_solution_projects(root)
+  if res.solution then
+    logger.debug("neotest-dotnet: building solution")
+
+    local build_exit_code, build_res = lib.process.run({
+      "dotnet",
+      "build",
+      res.solution,
+    }, {
+      stderr = true,
+      stdout = true,
+    })
+
+    if build_exit_code ~= 0 then
+      nio.scheduler()
+      vim.notify_once(
+        "Failed to build solution " .. res.solution .. " with error: " .. build_res.stdout,
+        vim.log.levels.ERROR
+      )
+    end
+
+    for _, project in ipairs(res.projects) do
+      local proj_info = dotnet_utils.get_proj_info(project)
+      if proj_info.proj_file then
+        last_discovery[proj_info.proj_file] = os.time()
+      end
+    end
+  end
+
+  solution_cache = res.projects
+
+  solution_semaphore.release()
+
+  return res.projects
 end
 
 return M

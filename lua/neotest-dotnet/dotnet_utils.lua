@@ -167,7 +167,7 @@ function M.get_proj_info(path)
   return proj_data
 end
 
----@type table<string, string[]>
+---@type table<string, { solution: string?, projects:string[]}>
 local project_cache = {}
 
 local solution_discovery_semaphore = nio.control.semaphore(1)
@@ -176,7 +176,7 @@ local solution_discovery_semaphore = nio.control.semaphore(1)
 ---Falls back to listing all project in directory.
 ---@async
 ---@param root string
----@return string[]
+---@return { solution: string?, projects: string[] }
 function M.get_solution_projects(root)
   root = M.abspath(root)
 
@@ -231,11 +231,13 @@ function M.get_solution_projects(root)
   logger.info("found test projects: " .. root)
   logger.info(test_projects)
 
-  project_cache[root] = test_projects
+  local res = { solution = solution, projects = test_projects }
+
+  project_cache[root] = res
 
   solution_discovery_semaphore.release()
 
-  return test_projects
+  return res
 end
 
 return M

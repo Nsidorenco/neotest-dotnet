@@ -39,7 +39,7 @@ function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
     return false
   end
 
-  local projects = dotnet_utils.get_solution_projects(root)
+  local projects = vstest.discovery_solution_tests(root)
   rel_path = vim.fs.joinpath(root, rel_path)
 
   if vim.fn.has("nvim-0.11") == 1 then
