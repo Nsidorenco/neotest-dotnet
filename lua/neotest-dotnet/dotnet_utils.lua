@@ -31,7 +31,7 @@ local proj_info_cache = {}
 
 local file_to_project_map = {}
 
-local discovery_semaphore = nio.control.semaphore(1)
+local project_semaphore = {}
 
 ---collects project information based on file
 ---@async
@@ -40,8 +40,6 @@ local discovery_semaphore = nio.control.semaphore(1)
 function M.get_proj_info(path)
   path = M.abspath(path)
   logger.debug("neotest-dotnet: getting project info for " .. path)
-
-  discovery_semaphore.acquire()
 
   local proj_file
 
@@ -54,10 +52,21 @@ function M.get_proj_info(path)
     file_to_project_map[path] = M.abspath(proj_file)
   end
 
+  local semaphore
+
+  if project_semaphore[proj_file] then
+    semaphore = project_semaphore[proj_file]
+  else
+    semaphore = nio.control.semaphore(1)
+    project_semaphore[proj_file] = semaphore
+  end
+
+  semaphore.acquire()
+
   logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
 
   if proj_info_cache[proj_file] then
-    discovery_semaphore.release()
+    semaphore.release()
     return proj_info_cache[proj_file]
   end
 
@@ -154,11 +163,11 @@ function M.get_proj_info(path)
     file_to_project_map[item.FullPath] = proj_file
   end
 
-  discovery_semaphore.release()
+  semaphore.release()
   return proj_data
 end
 
----@type table<string, string[]>
+---@type table<string, { solution: string?, projects:string[]}>
 local project_cache = {}
 
 local solution_discovery_semaphore = nio.control.semaphore(1)
@@ -167,7 +176,7 @@ local solution_discovery_semaphore = nio.control.semaphore(1)
 ---Falls back to listing all project in directory.
 ---@async
 ---@param root string
----@return string[]
+---@return { solution: string?, projects: string[] }
 function M.get_solution_projects(root)
   root = M.abspath(root)
 
@@ -222,11 +231,13 @@ function M.get_solution_projects(root)
   logger.info("found test projects: " .. root)
   logger.info(test_projects)
 
-  project_cache[root] = test_projects
+  local res = { solution = solution, projects = test_projects }
+
+  project_cache[root] = res
 
   solution_discovery_semaphore.release()
 
-  return test_projects
+  return res
 end
 
 return M

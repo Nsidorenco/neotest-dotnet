@@ -84,26 +84,54 @@ module TestDiscovery =
           LineNumber: int
           FullyQualifiedName: string }
 
-    let discoveredTests = ConcurrentDictionary<string, TestCase seq>()
+    let mutable discoveredTests = Map.empty<string, TestCase seq>
 
     let getTestCases ids =
         let idMap =
             discoveredTests
-            |> _.Values
+            |> Map.values
             |> Seq.collect (Seq.map (fun testCase -> testCase.Id, testCase))
             |> Map
 
         ids |> Array.choose (fun id -> Map.tryFind id idMap)
 
-    type PlaygroundTestDiscoveryHandler() =
+    type PlaygroundTestDiscoveryHandler(waitFile: string, outputFile: string) =
         interface ITestDiscoveryEventsHandler2 with
             member _.HandleDiscoveredTests(discoveredTestCases: IEnumerable<TestCase>) =
+                Console.WriteLine($"Discovered tests: {Seq.length discoveredTestCases}")
+
                 discoveredTestCases
                 |> Seq.groupBy _.CodeFilePath
                 |> Seq.iter (fun (file, testCases) ->
-                    discoveredTests.AddOrUpdate(file, testCases, (fun _ _ -> testCases)) |> ignore)
+                    Console.WriteLine($"Discovered {Seq.length testCases} tests for: {file}")
+                    discoveredTests <- Map.add file testCases discoveredTests)
 
-            member _.HandleDiscoveryComplete(_, _) = ()
+            member _.HandleDiscoveryComplete(_, _) =
+                use testsWriter = new StreamWriter(outputFile, append = false)
+
+                let testFiles = discoveredTests.Keys |> Seq.toArray |> String.concat ", "
+
+                Console.WriteLine($"Discovered tests for: {testFiles}")
+
+                discoveredTests
+                |> Seq.map (fun x ->
+                    (x.Key,
+                     x.Value
+                     |> Seq.map (fun testCase ->
+                         testCase.Id,
+                         { CodeFilePath = testCase.CodeFilePath
+                           DisplayName = testCase.DisplayName
+                           LineNumber = testCase.LineNumber
+                           FullyQualifiedName = testCase.FullyQualifiedName })
+                     |> Map))
+                |> Map
+                |> JsonConvert.SerializeObject
+                |> testsWriter.WriteLine
+
+                use waitFileWriter = new StreamWriter(waitFile, append = false)
+                waitFileWriter.WriteLine("1")
+
+                Console.WriteLine($"Wrote test results to {outputFile}")
 
             member __.HandleLogMessage(level, message) = logHandler level message
 
@@ -248,42 +276,17 @@ module TestDiscovery =
             match Console.ReadLine() with
             | DiscoveryRequest args ->
                 // spawn as task to allow running discovery concurrently
-                task {
-                    do! Task.Yield()
+                let sourcesStr = args.Sources |> String.concat " "
 
-                    try
-                        let discoveryHandler =
-                            PlaygroundTestDiscoveryHandler() :> ITestDiscoveryEventsHandler2
+                try
+                    let discoveryHandler =
+                        PlaygroundTestDiscoveryHandler(args.WaitFile, args.OutputPath) :> ITestDiscoveryEventsHandler2
 
-                        for source in args.Sources do
-                            Console.WriteLine($"Discovering tests for: {source}")
-                            r.DiscoverTests([| source |], sourceSettings, options, testSession, discoveryHandler)
+                    Console.WriteLine($"Discovering tests for: {sourcesStr}")
+                    r.DiscoverTests(args.Sources, sourceSettings, options, testSession, discoveryHandler)
+                with e ->
+                    Console.WriteLine($"failed to discovery tests for {sourcesStr}. Exception: {e}")
 
-                        use testsWriter = new StreamWriter(args.OutputPath, append = false)
-
-                        discoveredTests
-                        |> Seq.map (fun x ->
-                            (x.Key,
-                             x.Value
-                             |> Seq.map (fun testCase ->
-                                 testCase.Id,
-                                 { CodeFilePath = testCase.CodeFilePath
-                                   DisplayName = testCase.DisplayName
-                                   LineNumber = testCase.LineNumber
-                                   FullyQualifiedName = testCase.FullyQualifiedName })
-                             |> Map))
-                        |> Map
-                        |> JsonConvert.SerializeObject
-                        |> testsWriter.WriteLine
-                    with e ->
-                        Console.WriteLine($"failed to discovery tests for {args.Sources}. Exception: {e}")
-
-                    use waitFileWriter = new StreamWriter(args.WaitFile, append = false)
-                    waitFileWriter.WriteLine("1")
-
-                    Console.WriteLine($"Wrote test results to {args.WaitFile}")
-                }
-                |> ignore
             | RunTests args ->
                 task {
                     let testCases = getTestCases args.Ids
