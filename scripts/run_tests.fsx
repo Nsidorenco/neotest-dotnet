@@ -104,7 +104,14 @@ module TestDiscovery =
                 |> Seq.groupBy _.CodeFilePath
                 |> Seq.iter (fun (file, testCases) ->
                     Console.WriteLine($"Discovered {Seq.length testCases} tests for: {file}")
-                    discoveredTests <- Map.add file testCases discoveredTests)
+
+                    if String.IsNullOrWhiteSpace file then
+                        testCases
+                        |> Seq.groupBy (fun testCase -> testCase.Source)
+                        |> Seq.iter (fun (source, testCases) ->
+                            discoveredTests <- Map.add source testCases discoveredTests)
+                    else
+                        discoveredTests <- Map.add file testCases discoveredTests)
 
             member _.HandleDiscoveryComplete(_, _) =
                 use testsWriter = new StreamWriter(outputFile, append = false)

@@ -4,6 +4,9 @@ local logger = require("neotest.logging")
 
 local M = {}
 
+---@type { solution: string?, projects:string[]}?
+local project_cache
+
 function M.abspath(path)
   return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
 end
@@ -20,56 +23,9 @@ function M.parse_dotnet_info(input)
   return { sdk_path = match and vim.trim(match) }
 end
 
----@class DotnetProjectInfo
----@field proj_file string
----@field dll_file string
----@field proj_dir string
----@field is_test_project boolean
-
----@type table<string, DotnetProjectInfo>
-local proj_info_cache = {}
-
-local file_to_project_map = {}
-
-local project_semaphore = {}
-
----collects project information based on file
----@async
----@param path string
----@return DotnetProjectInfo
-function M.get_proj_info(path)
-  path = M.abspath(path)
-  logger.debug("neotest-dotnet: getting project info for " .. path)
-
-  local proj_file
-
-  if file_to_project_map[path] then
-    proj_file = file_to_project_map[path]
-  else
-    proj_file = vim.fs.find(function(name, _)
-      return name:match("%.[cf]sproj$")
-    end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
-    file_to_project_map[path] = M.abspath(proj_file)
-  end
-
-  local semaphore
-
-  if project_semaphore[proj_file] then
-    semaphore = project_semaphore[proj_file]
-  else
-    semaphore = nio.control.semaphore(1)
-    project_semaphore[proj_file] = semaphore
-  end
-
-  semaphore.acquire()
-
-  logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
-
-  if proj_info_cache[proj_file] then
-    semaphore.release()
-    return proj_info_cache[proj_file]
-  end
-
+---@param proj_file string
+---@return string? target_framework
+local function get_target_frameworks(proj_file)
   local code, res = lib.process.run({
     "dotnet",
     "msbuild",
@@ -93,6 +49,7 @@ function M.get_proj_info(path)
       "Failed to get msbuild target framework for " .. proj_file .. " with error: " .. res.stderr,
       vim.log.levels.ERROR
     )
+    return nil
   end
 
   local ok, parsed = pcall(nio.fn.json_decode, res.stdout)
@@ -106,6 +63,8 @@ function M.get_proj_info(path)
       "Failed to parse msbuild target framework for " .. proj_file .. " with error: " .. parsed,
       vim.log.levels.ERROR
     )
+
+    return nil
   end
 
   local framework_info = parsed.Properties
@@ -120,6 +79,99 @@ function M.get_proj_info(path)
     target_framework = frameworks[1]
   else
     target_framework = vim.trim(framework_info.TargetFramework or "")
+  end
+
+  if not target_framework or target_framework == "" then
+    logger.error("neotest-dotnet: failed to get target framework for " .. proj_file)
+    logger.error(framework_info)
+
+    nio.scheduler()
+    vim.notify(
+      "Failed to get target framework for "
+        .. proj_file
+        .. " with error: "
+        .. vim.inspect(framework_info),
+      vim.log.levels.ERROR
+    )
+
+    return nil
+  end
+
+  return target_framework
+end
+
+---@class DotnetProjectInfo
+---@field proj_file string
+---@field dll_file string
+---@field proj_dir string
+---@field is_test_project boolean
+
+---@type table<string, DotnetProjectInfo>
+local proj_info_cache = {}
+
+local file_to_project_map = {}
+
+local project_semaphore = {}
+
+---collects project information based on file
+---@async
+---@param path string
+---@return DotnetProjectInfo?
+function M.get_proj_info(path)
+  path = M.abspath(path)
+  logger.debug("neotest-dotnet: getting project info for " .. path)
+
+  local proj_file
+
+  if file_to_project_map[path] then
+    proj_file = file_to_project_map[path]
+  elseif vim.endswith(path, ".csproj") or vim.endswith(path, ".fsproj") then
+    proj_file = path
+  else
+    proj_file = vim.fs.find(function(name, _)
+      return name:match("%.[cf]sproj$")
+    end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
+
+    if not project_cache then
+      file_to_project_map[path] = M.abspath(proj_file)
+    else
+      if
+        not vim.iter(project_cache.projects):any(function(proj)
+          if proj == proj_file then
+            file_to_project_map[path] = M.abspath(proj_file)
+            return true
+          end
+          return false
+        end)
+      then
+        return nil
+      end
+    end
+  end
+
+  local semaphore
+
+  if project_semaphore[proj_file] then
+    semaphore = project_semaphore[proj_file]
+  else
+    semaphore = nio.control.semaphore(1)
+    project_semaphore[proj_file] = semaphore
+  end
+
+  semaphore.acquire()
+
+  logger.debug("neotest-dotnet: found project file for " .. path .. ": " .. proj_file)
+
+  if proj_info_cache[proj_file] then
+    semaphore.release()
+    return proj_info_cache[proj_file]
+  end
+
+  local target_framework = get_target_frameworks(proj_file)
+
+  if not target_framework then
+    semaphore.release()
+    return nil
   end
 
   local command = {
@@ -167,23 +219,20 @@ function M.get_proj_info(path)
   return proj_data
 end
 
----@type table<string, { solution: string?, projects:string[]}>
-local project_cache = {}
-
 local solution_discovery_semaphore = nio.control.semaphore(1)
 
 ---lists all projects in solution.
 ---Falls back to listing all project in directory.
 ---@async
 ---@param root string
----@return { solution: string?, projects: string[] }
+---@return { solution: string?, projects: DotnetProjectInfo[] }
 function M.get_solution_projects(root)
   root = M.abspath(root)
 
   solution_discovery_semaphore.acquire()
-  if project_cache[root] then
+  if project_cache then
     solution_discovery_semaphore.release()
-    return project_cache[root]
+    return project_cache
   end
 
   local solution = vim.fs.find(function(name)
@@ -223,8 +272,8 @@ function M.get_solution_projects(root)
 
   for _, project in ipairs(projects) do
     local project_info = M.get_proj_info(project)
-    if project_info.is_test_project then
-      test_projects[#test_projects + 1] = M.abspath(project)
+    if project_info and project_info.is_test_project then
+      test_projects[#test_projects + 1] = M.abspath(project_info.proj_file)
     end
   end
 
@@ -233,7 +282,7 @@ function M.get_solution_projects(root)
 
   local res = { solution = solution, projects = test_projects }
 
-  project_cache[root] = res
+  project_cache = res
 
   solution_discovery_semaphore.release()
 

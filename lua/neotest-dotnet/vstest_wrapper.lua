@@ -199,20 +199,42 @@ local function get_project_last_modified(project, path)
   return dll_stats and dll_stats.mtime and dll_stats.mtime.sec
 end
 
----@param project DotnetProjectInfo
+---@param projects DotnetProjectInfo[]
+---@param json any
+local function populate_discovery_cache(projects, json)
+  for file_path, test_map in pairs(json) do
+    if vim.endswith(file_path, ".dll") then
+      for _, project in ipairs(projects) do
+        if project.dll_file == file_path then
+          discovery_cache[project.proj_file] = test_map
+        end
+      end
+    else
+      discovery_cache[dotnet_utils.abspath(file_path)] = test_map
+    end
+  end
+end
+
+---@param projects DotnetProjectInfo[]
 ---@return table?
-local function discovery_tests_in_project(project)
+local function discover_tests_in_projects(projects)
   local json
 
   local wait_file = nio.fn.tempname()
   local output_file = nio.fn.tempname()
+
+  local dlls = {}
+
+  for _, project in ipairs(projects) do
+    dlls[#dlls + 1] = project.dll_file
+  end
 
   local command = vim
     .iter({
       "discover",
       output_file,
       wait_file,
-      { project.dll_file },
+      dlls,
     })
     :flatten()
     :join(" ")
@@ -244,6 +266,11 @@ end
 function M.discover_tests(path)
   path = dotnet_utils.abspath(path)
   local project = dotnet_utils.get_proj_info(path)
+
+  if not project then
+    logger.warn(string.format("neotest-dotnet: failed to find project info for %s", path))
+    return
+  end
 
   if not project.is_test_project then
     logger.info(string.format("neotest-dotnet: %s is not a test project. Skipping.", path))
@@ -277,8 +304,7 @@ function M.discover_tests(path)
   local project_last_modified = get_project_last_modified(project, path)
 
   if
-    discovery_cache[path]
-    and last_discovery[project.proj_file]
+    last_discovery[project.proj_file]
     and project_last_modified
     and project_last_modified <= last_discovery[project.proj_file]
   then
@@ -295,13 +321,11 @@ function M.discover_tests(path)
     return discovery_cache[path]
   end
 
-  local json = discovery_tests_in_project(project)
+  local json = discover_tests_in_projects({ project })
 
   if json then
     last_discovery[project.proj_file] = project_last_modified
-    for file_path, test_map in pairs(json) do
-      discovery_cache[dotnet_utils.abspath(file_path)] = test_map
-    end
+    populate_discovery_cache({ project }, json)
   end
 
   semaphore.release()
@@ -370,7 +394,7 @@ end
 local solution_cache
 local solution_semaphore = nio.control.semaphore(1)
 
-function M.discovery_solution_tests(root)
+function M.discover_solution_tests(root)
   if solution_cache then
     return solution_cache
   end
@@ -399,18 +423,35 @@ function M.discovery_solution_tests(root)
     end
 
     for _, project in ipairs(res.projects) do
-      local proj_info = dotnet_utils.get_proj_info(project)
-      if proj_info.proj_file then
-        last_discovery[proj_info.proj_file] = os.time()
+      if project.proj_file then
+        local dll_open_err, dll_stats = nio.uv.fs_stat(project.dll_file)
+        last_discovery[project.proj_file] = (
+          not dll_open_err
+          and dll_stats
+          and dll_stats.mtime
+          and dll_stats.mtime.sec
+        ) or os.time()
       end
     end
   end
 
-  solution_cache = res.projects
+  local project_paths = {}
+
+  for _, project in ipairs(res.projects) do
+    project_paths[#project_paths + 1] = project.proj_file
+  end
+
+  solution_cache = project_paths
+
+  local json = discover_tests_in_projects(res.projects)
+
+  if json then
+    populate_discovery_cache(res.projects, json)
+  end
 
   solution_semaphore.release()
 
-  return res.projects
+  return solution_cache
 end
 
 return M

@@ -24,33 +24,33 @@ local dap_settings = {
 local DotnetNeotestAdapter = { name = "neotest-dotnet" }
 
 function DotnetNeotestAdapter.root(path)
-  return lib.files.match_root_pattern("*.sln")(path)
+  local solution = lib.files.match_root_pattern("*.sln")(path)
     or lib.files.match_root_pattern("*.slnx")(path)
-    or lib.files.match_root_pattern("*.[cf]sproj")(path)
+
+  if solution then
+    vstest.discover_solution_tests(vim.fs.dirname(solution))
+  end
+
+  return solution or lib.files.match_root_pattern("*.[cf]sproj")(path)
 end
 
 function DotnetNeotestAdapter.is_test_file(file_path)
-  return (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
-    and vstest.discover_tests(file_path)
+  return (
+    (vim.endswith(file_path, ".csproj") or vim.endswith(file_path, ".fsproj"))
+    and vstest.discover_tests(dotnet_utils.abspath(file_path))
+  )
+    or (
+      (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
+      and vstest.discover_tests(file_path)
+    )
 end
 
-function DotnetNeotestAdapter.filter_dir(name, rel_path, root)
+function DotnetNeotestAdapter.filter_dir(name)
   if name == "bin" or name == "obj" then
     return false
   end
 
-  local projects = vstest.discovery_solution_tests(root)
-  rel_path = vim.fs.joinpath(root, rel_path)
-
-  if vim.fn.has("nvim-0.11") == 1 then
-    return vim.iter(projects):any(function(project)
-      project = vim.fs.dirname(project)
-      return vim.fs.relpath(project, rel_path) ~= nil or vim.fs.relpath(rel_path, project) ~= nil
-    end)
-  -- workaround for neovim version < 0.11
-  else
-    return true
-  end
+  return true
 end
 
 local function get_match_type(captured_nodes)
@@ -160,8 +160,70 @@ local function build_position(source, captured_nodes, tests_in_file, path)
   end
 end
 
+--- Some adapters do not provide the file which the test is defined in.
+--- In those cases we nest the test cases under the solution file.
+local function get_top_level_tests(project)
+  local tests_in_file = vstest.discover_tests(project)
+
+  if not tests_in_file or next(tests_in_file) == nil then
+    return
+  end
+
+  local n = #tests_in_file
+
+  local nodes = {
+    {
+      type = "file",
+      path = project,
+      name = project,
+      range = { 0, 0, n + 1, -1 },
+    },
+  }
+
+  local i = 0
+
+  -- add tests which does not have a matching tree-sitter node.
+  for id, test in pairs(tests_in_file) do
+    nodes[#nodes + 1] = {
+      id = id,
+      type = "test",
+      path = project,
+      name = test.DisplayName,
+      qualified_name = test.FullyQualifiedName,
+      range = { i, 0, i + 1, -1 },
+    }
+    i = i + 1
+  end
+
+  local structure = assert(build_structure(nodes, {}, {
+    nested_tests = false,
+    require_namespaces = false,
+    position_id = function(position, parents)
+      return position.id
+        or vim
+          .iter({
+            position.path,
+            vim.tbl_map(function(pos)
+              return pos.name
+            end, parents),
+            position.name,
+          })
+          :flatten()
+          :join("::")
+    end,
+  }))
+
+  return types.Tree.from_list(structure, function(pos)
+    return pos.id
+  end)
+end
+
 function DotnetNeotestAdapter.discover_positions(path)
   logger.info(string.format("neotest-dotnet: scanning %s for tests...", path))
+
+  if vim.endswith(path, ".csproj") or vim.endswith(path, ".fsproj") then
+    return get_top_level_tests(path)
+  end
 
   local filetype = (vim.endswith(path, ".fs") and "fsharp") or "c_sharp"
 
@@ -212,8 +274,9 @@ function DotnetNeotestAdapter.discover_positions(path)
     end
 
     -- add tests which does not have a matching tree-sitter node.
-    for _, test in pairs(tests_in_file) do
+    for id, test in pairs(tests_in_file) do
       nodes[#nodes + 1] = {
+        id = id,
         type = "test",
         path = path,
         name = test.DisplayName,
