@@ -1,15 +1,12 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
 local logger = require("neotest.logging")
+local files = require("neotest-dotnet.files")
 
 local M = {}
 
 ---@type { solution: string?, projects:string[]}?
 local project_cache
-
-function M.abspath(path)
-  return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
-end
 
 ---parses output of running `dotnet --info`
 ---@param input string?
@@ -118,7 +115,6 @@ local project_semaphore = {}
 ---@param path string
 ---@return DotnetProjectInfo?
 function M.get_proj_info(path)
-  path = M.abspath(path)
   logger.debug("neotest-dotnet: getting project info for " .. path)
 
   local proj_file
@@ -133,12 +129,12 @@ function M.get_proj_info(path)
     end, { upward = true, type = "file", path = vim.fs.dirname(path) })[1]
 
     if not project_cache then
-      file_to_project_map[path] = M.abspath(proj_file)
+      file_to_project_map[path] = proj_file
     else
       if
         not vim.iter(project_cache.projects):any(function(proj)
           if proj == proj_file then
-            file_to_project_map[path] = M.abspath(proj_file)
+            file_to_project_map[path] = proj_file
             return true
           end
           return false
@@ -209,10 +205,10 @@ function M.get_proj_info(path)
     logger.debug(res.stdout)
   end
 
-  proj_info_cache[proj_file] = proj_data
+  proj_info_cache[proj_data.proj_file] = proj_data
 
   for _, item in ipairs(output.Items.Compile) do
-    file_to_project_map[item.FullPath] = proj_file
+    file_to_project_map[item.FullPath] = proj_data.proj_file
   end
 
   semaphore.release()
@@ -227,8 +223,6 @@ local solution_discovery_semaphore = nio.control.semaphore(1)
 ---@param root string
 ---@return { solution: string?, projects: DotnetProjectInfo[] }
 function M.get_solution_projects(root)
-  root = M.abspath(root)
-
   solution_discovery_semaphore.acquire()
   if project_cache then
     solution_discovery_semaphore.release()
@@ -239,7 +233,7 @@ function M.get_solution_projects(root)
     return name:match("%.slnx?$")
   end, { upward = false, type = "file", path = root, limit = 1 })[1]
 
-  local solution_dir = M.abspath(vim.fs.dirname(solution))
+  local solution_dir = vim.fs.dirname(solution)
 
   local projects = {}
 
@@ -273,11 +267,11 @@ function M.get_solution_projects(root)
   for _, project in ipairs(projects) do
     local project_info = M.get_proj_info(project)
     if project_info and project_info.is_test_project then
-      test_projects[#test_projects + 1] = M.abspath(project_info.proj_file)
+      test_projects[#test_projects + 1] = project_info
     end
   end
 
-  logger.info("found test projects: " .. root)
+  logger.info("found test projects in " .. root)
   logger.info(test_projects)
 
   local res = { solution = solution, projects = test_projects }
@@ -287,6 +281,38 @@ function M.get_solution_projects(root)
   solution_discovery_semaphore.release()
 
   return res
+end
+
+---return the unix timestamp of when the project dll file was last modified
+---@async
+---@param project DotnetProjectInfo
+---@return integer?
+function M.get_project_last_modified(project)
+  return files.get_path_last_modified(project.proj_file)
+end
+
+---@async
+---@param project DotnetProjectInfo
+---@return boolean success if build was successful
+function M.build_project(project)
+  logger.debug("neotest-dotnet: building project " .. project.proj_file)
+  local exitCode, out = lib.process.run(
+    { "dotnet", "build", project.proj_file },
+    { stdout = true, stderr = true }
+  )
+
+  if exitCode ~= 0 then
+    nio.scheduler()
+    logger.error("neotest-dotnet: failed to build project " .. project.proj_file)
+    logger.error(out.stdout)
+    vim.notify_once(
+      "neotest-dotnet: failed to build project " .. project.proj_file,
+      vim.log.levels.ERROR
+    )
+    return false
+  end
+
+  return true
 end
 
 return M

@@ -1,6 +1,7 @@
 local nio = require("nio")
 local lib = require("neotest.lib")
-local vstest = require("neotest-dotnet.vstest_wrapper")
+local vstest = require("neotest-dotnet.vstest")
+local cli_wrapper = require("neotest-dotnet.vstest.cli_wrapper")
 
 ---@async
 ---@param spec neotest.RunSpec
@@ -19,7 +20,7 @@ return function(spec)
   local result_future = nio.control.future()
 
   nio.run(function()
-    vstest.spin_lock_wait_file(wait_file, 5 * 30 * 1000)
+    cli_wrapper.spin_lock_wait_file(wait_file, 5 * 30 * 1000)
     result_future:set()
   end)
 

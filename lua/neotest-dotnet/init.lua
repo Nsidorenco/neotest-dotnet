@@ -3,7 +3,9 @@ local lib = require("neotest.lib")
 local types = require("neotest.types")
 local logger = require("neotest.logging")
 
-local vstest = require("neotest-dotnet.vstest_wrapper")
+local vstest = require("neotest-dotnet.vstest")
+local test_discovery = require("neotest-dotnet.vstest.discovery")
+local cli_wrapper = require("neotest-dotnet.vstest.cli_wrapper")
 local vstest_strategy = require("neotest-dotnet.strategies.vstest")
 local dotnet_utils = require("neotest-dotnet.dotnet_utils")
 
@@ -28,7 +30,7 @@ function DotnetNeotestAdapter.root(path)
     or lib.files.match_root_pattern("*.slnx")(path)
 
   if solution_dir then
-    vstest.discover_solution_tests(solution_dir)
+    test_discovery.discover_solution_tests(solution_dir)
   end
 
   return solution_dir or lib.files.match_root_pattern("*.[cf]sproj")(path)
@@ -37,11 +39,11 @@ end
 function DotnetNeotestAdapter.is_test_file(file_path)
   return (
     (vim.endswith(file_path, ".csproj") or vim.endswith(file_path, ".fsproj"))
-    and vstest.discover_tests(dotnet_utils.abspath(file_path))
+    and test_discovery.discover_tests(file_path)
   )
     or (
       (vim.endswith(file_path, ".cs") or vim.endswith(file_path, ".fs"))
-      and vstest.discover_tests(file_path)
+      and test_discovery.discover_tests(file_path)
     )
 end
 
@@ -163,7 +165,7 @@ end
 --- Some adapters do not provide the file which the test is defined in.
 --- In those cases we nest the test cases under the solution file.
 local function get_top_level_tests(project)
-  local tests_in_file = vstest.discover_tests(project)
+  local tests_in_file = test_discovery.discover_tests(project)
 
   if not tests_in_file or next(tests_in_file) == nil then
     return
@@ -227,7 +229,7 @@ function DotnetNeotestAdapter.discover_positions(path)
 
   local filetype = (vim.endswith(path, ".fs") and "fsharp") or "c_sharp"
 
-  local tests_in_file = vstest.discover_tests(path)
+  local tests_in_file = test_discovery.discover_tests(path)
 
   if not tests_in_file or next(tests_in_file) == nil then
     return
@@ -384,7 +386,7 @@ end
 function DotnetNeotestAdapter.results(spec, result, _tree)
   local max_wait = 5 * 50 * 1000 -- 5 min
   logger.info("neotest-dotnet: waiting for test results")
-  local success, data = pcall(vstest.spin_lock_wait_file, spec.context.result_path, max_wait)
+  local success, data = pcall(cli_wrapper.spin_lock_wait_file, spec.context.result_path, max_wait)
 
   spec.context.stop_stream()
 
@@ -434,7 +436,7 @@ end
 
 ---@param opts neotest-dotnet.Config
 local function apply_user_settings(_, opts)
-  vstest.sdk_path = opts.sdk_path
+  cli_wrapper.sdk_path = opts.sdk_path
   dap_settings = vim.tbl_extend("force", dap_settings, opts.dap_settings or {})
   return DotnetNeotestAdapter
 end
