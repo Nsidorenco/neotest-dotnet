@@ -58,16 +58,10 @@ local function discover_tests_in_projects(projects)
   return json
 end
 
----@param path string
+---@param project DotnetProjectInfo
+---@param path string path to file to extract tests from
 ---@return table<string, TestCase> | nil test_cases map from id -> test case
-function M.discover_tests(path)
-  local project = dotnet_utils.get_proj_info(path)
-
-  if not project then
-    logger.warn(string.format("neotest-dotnet: failed to find project info for %s", path))
-    return
-  end
-
+function M.discover_project_tests(project, path)
   if not project.is_test_project then
     logger.info(string.format("neotest-dotnet: %s is not a test project. Skipping.", path))
     return
@@ -142,6 +136,18 @@ function M.discover_tests(path)
   logger.debug("released semaphore for " .. project.proj_file .. " on path: " .. path)
 
   return (json and json[path]) or {}
+end
+
+---@param path string
+---@return table<string, TestCase> | nil test_cases map from id -> test case
+function M.discover_tests(path)
+  local project = dotnet_utils.get_proj_info(path)
+  if not project then
+    logger.warn(string.format("neotest-dotnet: failed to find project for %s", path))
+    return {}
+  end
+
+  return M.discover_project_tests(project, path)
 end
 
 local solution_cache

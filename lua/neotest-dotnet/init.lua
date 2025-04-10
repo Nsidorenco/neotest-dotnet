@@ -164,8 +164,16 @@ end
 
 --- Some adapters do not provide the file which the test is defined in.
 --- In those cases we nest the test cases under the solution file.
-local function get_top_level_tests(project)
-  local tests_in_file = test_discovery.discover_tests(project)
+local function get_top_level_tests(project_path)
+  local project = dotnet_utils.get_proj_info(project_path)
+
+  if not project then
+    return {}
+  end
+
+  local tests_in_file = test_discovery.discover_project_tests(project, project.dll_file)
+
+  logger.debug(string.format("neotest-dotnet: top-level tests in file: %s", project.dll_file))
 
   if not tests_in_file or next(tests_in_file) == nil then
     return
@@ -176,8 +184,8 @@ local function get_top_level_tests(project)
   local nodes = {
     {
       type = "file",
-      path = project,
-      name = project,
+      path = project.proj_file,
+      name = vim.fs.basename(project.proj_file),
       range = { 0, 0, n + 1, -1 },
     },
   }
@@ -189,7 +197,7 @@ local function get_top_level_tests(project)
     nodes[#nodes + 1] = {
       id = id,
       type = "test",
-      path = project,
+      path = project.proj_file,
       name = test.DisplayName,
       qualified_name = test.FullyQualifiedName,
       range = { i, 0, i + 1, -1 },
