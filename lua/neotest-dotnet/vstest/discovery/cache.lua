@@ -1,5 +1,5 @@
 local nio = require("nio")
-local logger = require("neotest-dotnet.logging")
+local logger = require("neotest.logging")
 local file_utils = require("neotest-dotnet.files")
 
 local M = {}
@@ -45,7 +45,7 @@ function M.get_cache_entry(project, path)
   local test_cases = discovery_cache[normalized_path]
 
   logger.trace(discovery_cache)
-  logger.debug("Cache entry for %s:", normalized_path)
+  logger.debug("Cache entry for " .. normalized_path)
   logger.debug(test_cases)
 
   cache_semaphore.release()

@@ -1,13 +1,11 @@
 describe("test cache should", function()
-  -- add test_discovery script and treesitter parsers installed with luarocks
-  vim.opt.runtimepath:append(vim.fn.getcwd())
-  vim.opt.runtimepath:append(vim.fn.expand("~/.luarocks/lib/lua/5.1/"))
-
   local nio = require("nio")
+  local cache = require("neotest-dotnet.vstest.discovery.cache")
 
-  nio.tests.it("return stored unix path using windows path query", function()
-    local cache = require("neotest-dotnet.vstest.discovery.cache")
+  local sep = package.config:sub(1, 1)
+  local test_file_path = "C:" .. sep .. "src" .. sep .. "CSharpTest" .. sep .. "CSharpTest.cs"
 
+  nio.tests.it("return stored unix path", function()
     local sample_project = {
       proj_file = "C:\\src\\CSharpTest\\CSharpTest.csproj",
       dll_file = "C:\\src\\CSharpTest\\bin\\Debug\\net6.0\\CSharpTest.dll",
@@ -27,8 +25,7 @@ describe("test cache should", function()
 
     cache.populate_discovery_cache(sample_project, test_cases, 0)
 
-    local cached_test_cases =
-      cache.get_cache_entry(sample_project, "C:\\src\\CSharpTest\\CSharpTest.cs")
+    local cached_test_cases = cache.get_cache_entry(sample_project, test_file_path)
 
     local expected = {
       {
@@ -43,9 +40,7 @@ describe("test cache should", function()
     assert.are_same(expected, cached_test_cases.TestCases)
   end)
 
-  nio.tests.it("return stored windows path using unix path query", function()
-    local cache = require("neotest-dotnet.vstest.discovery.cache")
-
+  nio.tests.it("return stored windows path", function()
     local sample_project = {
       proj_file = "C:\\src\\CSharpTest\\CSharpTest.csproj",
       dll_file = "C:\\src\\CSharpTest\\bin\\Debug\\net6.0\\CSharpTest.dll",
@@ -53,7 +48,7 @@ describe("test cache should", function()
     }
 
     local test_cases = {
-      ["C:\\src\\CSharpTest\\CSharpTest.cs"] = {
+      [vim.fs.normalize("C:\\src\\CSharpTest\\CSharpTest.cs", { win = true })] = {
         {
           CodeFilePath = "C:\\src\\CSharpTest\\CSharpTest.cs",
           DisplayName = "CSharpTest.CSharpTest.TestMethod1",
@@ -65,8 +60,7 @@ describe("test cache should", function()
 
     cache.populate_discovery_cache(sample_project, test_cases, 0)
 
-    local cached_test_cases =
-      cache.get_cache_entry(sample_project, "C:/src/CSharpTest/CSharpTest.cs")
+    local cached_test_cases = cache.get_cache_entry(sample_project, test_file_path)
 
     local expected = {
       {

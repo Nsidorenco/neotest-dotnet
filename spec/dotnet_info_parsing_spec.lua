@@ -1,6 +1,6 @@
-local dotnet_utils = require("neotest-dotnet.dotnet_utils")
-
 describe("Dotnet info parsing should", function()
+  local dotnet_utils = require("neotest-dotnet.dotnet_utils")
+
   it("parse sdk_path from dotnet 9.0.x output on macos", function()
     local output = [[
 .NET SDK:

@@ -4,7 +4,7 @@ local logger = require("neotest.logging")
 local M = {}
 
 function M.abspath(path)
-  return vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
+  return vim.fs.normalize(path)
 end
 
 ---return the unix timestamp of when the a file was last modified
