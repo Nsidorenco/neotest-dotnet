@@ -17,6 +17,7 @@ open Microsoft.VisualStudio.TestPlatform.ObjectModel
 open Microsoft.VisualStudio.TestPlatform.ObjectModel.Client
 open Microsoft.VisualStudio.TestPlatform.ObjectModel.Client.Interfaces
 open Microsoft.VisualStudio.TestPlatform.ObjectModel.Logging
+open System.Text.RegularExpressions
 
 type NeoTestResultError = { message: string }
 
@@ -117,6 +118,14 @@ module TestDiscovery =
 
                 Console.WriteLine($"Discovered tests for: {testFiles}")
 
+                let rx = Regex(@"[^\(\)]+\.(.+)$", RegexOptions.Compiled)
+                let shortName displayName =
+                    let m = rx.Match displayName
+                    if m.Success then
+                        m.Groups[1].Value
+                    else
+                        displayName
+
                 discoveredTests
                 |> Seq.map (fun x ->
                     (x.Key,
@@ -124,7 +133,7 @@ module TestDiscovery =
                      |> Seq.map (fun testCase ->
                          testCase.Id,
                          { CodeFilePath = testCase.CodeFilePath
-                           DisplayName = testCase.DisplayName
+                           DisplayName = shortName testCase.DisplayName
                            LineNumber = testCase.LineNumber
                            FullyQualifiedName = testCase.FullyQualifiedName })
                      |> Map))
